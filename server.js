@@ -2,134 +2,21 @@ const WebSocket = require('ws');
 const http = require('http');
 const express = require('express');
 const path = require('path');
-require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 const PORT = process.env.PORT || 3000;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-
 const clients = new Set();
 const activeSlaves = new Map();
-const activeBots = new Map(); // Quản lý danh sách Bot động
+const activeBots = new Map();
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.static(__dirname));
 
-// ==========================================
-// 🤖 AI MANAGER ENGINE (BỘ TRÍ TUỆ NHÂN TẠO QUẢN LÝ)
-// ==========================================
-async function processAiManagerCommand(userPrompt, systemContext) {
-    const prompt = userPrompt.toLowerCase().trim();
-    
-    // Nếu có Cấu hình Gemini API Key -> Gọi API của Google Gemini
-    if (GEMINI_API_KEY) {
-        try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{
-                        parts: [{
-                            text: `Bạn là AI Quản Lý Hệ Thống Hendy & Hades V6100 Pro. 
-Trạng thái hệ thống hiện tại: 
-- Số lượng Bot active: ${systemContext.botCount || 0}
-- Số lượng Slave connected: ${systemContext.slaveCount || 0}
-
-Người dùng gửi câu lệnh: "${userPrompt}"
-
-Hãy phân tích lệnh và trả về DUY NHẤT một chuỗi JSON theo định dạng chuẩn sau (không thêm văn bản ngoài JSON):
-{
-  "action": "START_ALL_BOTS" | "STOP_ALL_BOTS" | "ADD_BOT" | "EXPORT_CSV" | "CLEAR_LOGS" | "LOCK_USER" | "SYSTEM_STATUS" | "UNKNOWN",
-  "reply": "Lời phản hồi ngắn gọn, chuyên nghiệp bằng tiếng Việt",
-  "params": { "count": 1, "target": "" }
-}`
-                        }]
-                    }]
-                })
-            });
-
-            const data = await response.json();
-            const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (textResponse) {
-                const cleanedJson = textResponse.replace(/```json|```/g, '').trim();
-                return JSON.parse(cleanedJson);
-            }
-        } catch (err) {
-            console.error('[AI GEMINI ERROR]:', err);
-        }
-    }
-
-    // Bộ quy tắc AI Local Engine (Fallback hoạt động offline / không cần API Key)
-    let action = 'UNKNOWN';
-    let reply = '🤖 AI Quản lý chưa hiểu rõ yêu cầu. Bạn có thể thử: "Chạy tất cả bot", "Dừng bot", "Thêm 3 bot", "Xuất báo cáo", hoặc "Báo cáo trạng thái".';
-    let params = {};
-
-    if (prompt.includes('chạy') || prompt.includes('bắt đầu') || prompt.includes('start')) {
-        action = 'START_ALL_BOTS';
-        reply = '🚀 AI Manager đã phát lệnh kích hoạt TẤT CẢ các Bot trong hệ thống!';
-    } else if (prompt.includes('dừng') || prompt.includes('stop') || prompt.includes('tắt')) {
-        action = 'STOP_ALL_BOTS';
-        reply = '⏹ AI Manager đã tạm dừng hoạt động của tất cả các Bot!';
-    } else if (prompt.includes('thêm bot') || prompt.includes('tạo bot') || prompt.includes('add bot')) {
-        action = 'ADD_BOT';
-        const match = prompt.match(/\d+/);
-        const count = match ? parseInt(match[0]) : 1;
-        params = { count };
-        reply = `➕ AI Manager đã thêm thành công ${count} tài khoản Bot mới vào Hub!`;
-    } else if (prompt.includes('xuất') || prompt.includes('báo cáo') || prompt.includes('csv') || prompt.includes('download')) {
-        action = 'EXPORT_CSV';
-        reply = '📥 AI Manager đã tạo và tải về tệp báo cáo danh sách Bot!';
-    } else if (prompt.includes('xóa log') || prompt.includes('dọn log') || prompt.includes('clear')) {
-        action = 'CLEAR_LOGS';
-        reply = '🗑️ AI Manager đã dọn dẹp sạch sẽ toàn bộ nhật ký hệ thống.';
-    } else if (prompt.includes('trạng thái') || prompt.includes('kiểm tra') || prompt.includes('status') || prompt.includes('sức khỏe')) {
-        action = 'SYSTEM_STATUS';
-        reply = `📊 BÁO CÁO SỨC KHỎE HỆ THỐNG:\n- Số Slave đang kết nối: ${systemContext.slaveCount || 0}\n- Số Bot đang lưu trữ: ${systemContext.botCount || 0}\n- WebSocket Hub: ONLINE 🟢`;
-    }
-
-    return { action, reply, params };
-}
-
-// API Tiếp nhận lệnh từ AI Manager
-app.post('/api/ai/manage', async (req, res) => {
-    try {
-        const { prompt, context } = req.body;
-        if (!prompt) {
-            return res.status(400).json({ error: 'Vui lòng cung cấp câu lệnh' });
-        }
-
-        const systemContext = {
-            slaveCount: activeSlaves.size,
-            botCount: activeBots.size,
-            ...(context || {})
-        };
-
-        const result = await processAiManagerCommand(prompt, systemContext);
-
-        // Broadcast hành động của AI qua WebSocket tới toàn bộ các Client
-        wss.clients.forEach((client) => {
-            if (client.readyState === WebSocket.OPEN) {
-                client.send(JSON.stringify({
-                    type: 'AI_MANAGER_ACTION',
-                    action: result.action,
-                    params: result.params,
-                    sender: 'AI_SERVER'
-                }));
-            }
-        });
-
-        res.json({ success: true, data: result });
-    } catch (error) {
-        console.error('[AI API ERROR]:', error);
-        res.status(500).json({ error: 'Lỗi xử lý AI Manager' });
-    }
-});
-
-// APIs Hiện tại của Hệ thống
+// API lấy danh sách Slaves
 app.get('/api/slaves', (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     let slavesList = [];
@@ -146,11 +33,13 @@ app.get('/api/slaves', (req, res) => {
     res.end(JSON.stringify(slavesList, null, 2));
 });
 
+// API lấy danh sách Bot active
 app.get('/api/bots', (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(Array.from(activeBots.values()), null, 2));
 });
 
+// API gửi lệnh điều khiển nhanh
 app.get('/send-command', (req, res) => {
     const cmd = req.query.cmd || 'ĐIỂM DANH + SC88 +';
     let count = 0;
@@ -163,7 +52,41 @@ app.get('/send-command', (req, res) => {
     res.send(`🚀 Đã phát lệnh thành công cho ${count} thiết bị: [ ${cmd} ]`);
 });
 
-// WebSocket Event Listener
+// --- AI ENGINE HANDLER (NLP RULE-BASED / API READY) ---
+function processAiCommand(text) {
+    const input = text.toLowerCase();
+    
+    // 1. Lệnh quản lý Bot
+    if (input.includes('chạy') && (input.includes('tất cả') || input.includes('toàn bộ bot'))) {
+        return { reply: "Mệnh lệnh xác nhận. Đang kích hoạt toàn bộ chiến binh Hades V6100.", trigger: "AI_START_BOTS" };
+    }
+    if (input.includes('dừng') || input.includes('stop')) {
+        return { reply: "Hệ thống đã nhận lệnh dừng hỏa lực. Toàn bộ Bot đang đóng băng.", trigger: "AI_STOP_BOTS" };
+    }
+    if (input.includes('thêm bot') || input.includes('tạo bot')) {
+        return { reply: "Đã khởi tạo thêm một Bot mới vào hàng chờ hệ thống.", trigger: "AI_ADD_BOT" };
+    }
+    
+    // 2. Lệnh UI / Navigation
+    if (input.includes('mở kho') || input.includes('acc store')) {
+        return { reply: "Đang truy xuất CSDL Kho Tài khoản Cyberpunk...", trigger: "AI_OPEN_ACC_STORE" };
+    }
+    if (input.includes('test') || input.includes('giả lập')) {
+        return { reply: "Khởi động môi trường giả lập Live Stream Hendy.", trigger: "AI_OPEN_TEST_ENV" };
+    }
+
+    // 3. Truy vấn trạng thái
+    if (input.includes('trạng thái') || input.includes('báo cáo')) {
+        return { reply: `Hệ thống ổn định. Đang có ${wss.clients.size} kết nối WS hoạt động. Số lượng Bot đang quản lý: ${activeBots.size}.`, trigger: "NONE" };
+    }
+
+    // Mặc định (Có thể tích hợp gọi API Gemini/OpenAI tại đây)
+    return { 
+        reply: "AI Manager đang chờ lệnh. Bạn có thể yêu cầu: 'Chạy tất cả bot', 'Dừng bot', 'Mở kho tài khoản', 'Mở môi trường giả lập'...", 
+        trigger: "NONE" 
+    };
+}
+
 wss.on('connection', (ws) => {
     clients.add(ws);
     ws.isAlive = true;
@@ -178,6 +101,21 @@ wss.on('connection', (ws) => {
         try {
             const data = JSON.parse(message);
             const now = Date.now();
+            
+            // XỬ LÝ LỆNH TỪ AI MANAGER FRONTEND
+            if (data.action === 'AI_CHAT') {
+                console.log('[AI RECV]:', data.text);
+                const aiResult = processAiCommand(data.text);
+                
+                // Trả kết quả về cho Client đã yêu cầu
+                ws.send(JSON.stringify({
+                    type: 'AI_RESPONSE',
+                    message: aiResult.reply,
+                    triggerCmd: aiResult.trigger
+                }));
+                return; // Không broadcast lệnh chat AI cho toàn bộ server
+            }
+
             console.log('[WS RECV]:', data);
 
             if (data.action === 'SYNC_REGISTER_TAB') {
@@ -208,7 +146,7 @@ wss.on('connection', (ws) => {
                 console.log(`[BOT CREATED] ID: ${data.botId} | Acc: ${data.account}`);
             }
 
-            // Broadcast dữ liệu/lệnh tới tất cả Client WebSocket khác
+            // Broadcast dữ liệu/lệnh tới tất cả Client khác
             wss.clients.forEach((client) => {
                 if (client !== ws && client.readyState === WebSocket.OPEN) {
                     client.send(JSON.stringify({ type: 'BROADCAST', data }));
