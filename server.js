@@ -1,130 +1,201 @@
-import logging
-import asyncio
-import aiosqlite
-import aiohttp # Thêm thư viện gọi API
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, MessageHandler, filters, ContextTypes
+const TelegramBotModule = require('node-telegram-bot-api');
+const TelegramBot = TelegramBotModule.default || TelegramBotModule;
+const WebSocket = require('ws');
+const fs = require('fs');
+const path = require('path');
 
-# Thiết lập log
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+// ==========================================
+// CẤU HÌNH HỆ THỐNG
+// ==========================================
+const WS_PORT = process.env.PORT || 8080;
+const currentToken = process.env.BOT_TOKEN || '8689114890:AAFBFM0rNtZWpOtAovIPHPVQTJVp0odU1DQ';
+const ADMIN_ID = process.env.ADMIN_ID || '6138197737';
+const CHANNEL_ID = process.env.CHANNEL_ID || '-100xxxxxxxxx';
 
-user_states = {}
-BRANDS = ['SC88', 'C168', 'QQ88 THỨ SÁU', 'F8BET', 'KJC']
-BOT1_TOKEN = "YOUR_BOT_TOKEN_HERE" 
+const DB_FILE = path.join(__dirname, 'database.json');
+let users = {};
+let masterWebSocket = null;
+let bot = null;
 
-# ⚠️ THAY BẰNG DOMAIN RAILWAY CỦA BẠN
-NODEJS_API_URL = "https://ecosystem-api-production.up.railway.app/api/orders"
+const DEFAULT_LINKED_ACCOUNTS = {
+    SC88: [],
+    C168: [],
+    CM88: [],
+    F8BET: [],
+    QQ88: [],
+    "78WIN": []
+};
 
-# ================= DATABASE (TỐI ƯU ASYNC) =================
-# [Giữ nguyên phần DB như code cũ của bạn...]
-async def init_db():
-    async with aiosqlite.connect('system.db') as db:
-        await db.execute('''CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT, balance INTEGER DEFAULT 50000)''')
-        await db.execute('''CREATE TABLE IF NOT EXISTS linked_accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, brand TEXT, account_name TEXT)''')
-        await db.commit()
+let brandStatuses = {
+    'SC88': { status: '🟢 Hoạt động', ping: 12 },
+    'C168': { status: '🟢 Hoạt động', ping: 15 },
+    'F8BET': { status: '🟢 Hoạt động', ping: 14 }
+};
 
-async def get_or_create_user(user_id, name):
-    async with aiosqlite.connect('system.db') as db:
-        async with db.execute("SELECT balance FROM users WHERE id = ?", (user_id,)) as cursor:
-            row = await cursor.fetchone()
-            if row:
-                return row[0]
-            else:
-                await db.execute("INSERT INTO users (id, name, balance) VALUES (?, ?, 50000)", (user_id, name))
-                await db.commit()
-                return 50000
+// ==========================================
+// QUẢN LÝ DATABASE
+// ==========================================
+function loadDatabase() {
+    try {
+        if (fs.existsSync(DB_FILE)) {
+            const data = fs.readFileSync(DB_FILE, 'utf8');
+            users = JSON.parse(data);
+            Object.keys(users).forEach(uid => {
+                if (!users[uid].linkedAccounts) {
+                    users[uid].linkedAccounts = JSON.parse(JSON.stringify(DEFAULT_LINKED_ACCOUNTS));
+                }
+                if (users[uid].balance === undefined) {
+                    users[uid].balance = 50000;
+                }
+            });
+            console.log(`✅ Đã tải dữ liệu của ${Object.keys(users).length} khách hàng.`);
+        } else {
+            console.log('⚠️ Chưa có file database.json, khởi tạo database mới.');
+            users = {};
+            saveDatabase();
+        }
+    } catch (err) {
+        console.error('❌ Lỗi đọc database:', err);
+        users = {};
+    }
+}
 
-async def get_linked_accounts(user_id):
-    async with aiosqlite.connect('system.db') as db:
-        async with db.execute("SELECT brand, account_name FROM linked_accounts WHERE user_id = ?", (user_id,)) as cursor:
-            rows = await cursor.fetchall()
-    accounts = {brand: [] for brand in BRANDS}
-    for brand, acc_name in rows:
-        if brand in accounts: accounts[brand].append(acc_name)
-    return accounts
+function saveDatabase() {
+    try {
+        fs.writeFileSync(DB_FILE, JSON.stringify(users, null, 4), 'utf8');
+    } catch (err) {
+        console.error('❌ Lỗi lưu database:', err);
+    }
+}
 
-async def add_linked_account(user_id, brand, account_name):
-    async with aiosqlite.connect('system.db') as db:
-        await db.execute("INSERT INTO linked_accounts (user_id, brand, account_name) VALUES (?, ?, ?)", (user_id, brand, account_name))
-        await db.commit()
+function getSystemStatusText() {
+    let report = `📡 *HENDY SYSTEM MONITOR*\n🕒 ${new Date().toLocaleTimeString('vi-VN')}\n--------------------------\n`;
+    Object.keys(brandStatuses).forEach(brand => {
+        const b = brandStatuses[brand];
+        report += `• *${brand}:* ${b.status} (${b.ping}ms)\n`;
+    });
+    return report;
+}
 
-async def update_balance(user_id, amount):
-    async with aiosqlite.connect('system.db') as db:
-        await db.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (amount, user_id))
-        await db.commit()
+// ==========================================
+// KHỞI TẠO BOT TELEGRAM
+// ==========================================
+function sendHomeMenu(chatId, u, isAdmin) {
+    const welcomeMessage = `
+🤖 *HENDY CYBERTECH PRO v2026* 🚀
+Chào mừng sếp, *${u.name}*
+--------------------------------------------------
+💎 *Phân quyền:* ${isAdmin ? '👑 ADMIN TỐI CAO' : '👤 KHÁCH HÀNG'}
+💰 **Ví Chính:** \`${u.balance.toLocaleString()} VNĐ\`
+--------------------------------------------------
+👉 Hệ thống tự động bảo mật & đồng bộ cao cấp.
+    `;
 
-# ================= GIAO DIỆN & XỬ LÝ CHÍNH =================
-# [Giữ nguyên các hàm send_home_menu, start, button_handler như code cũ của bạn...]
+    const inlineKeyboard = [
+        [{ text: '🎟️ TRUNG TÂM MUA CODE', callback_data: 'buy_code' }],
+        [{ text: '💳 NẠP TIỀN TỰ ĐỘNG', callback_data: 'deposit' }, { text: '📇 TRUNG TÂM KHÁCH HÀNG', callback_data: 'customer_center' }],
+        [{ text: '👥 NHÓM HỖ TRỢ', url: 'https://t.me/Hendy_Support_Group' }]
+    ];
 
-# ... (Vui lòng chèn lại phần send_home_menu, start, button_handler của bạn vào đây để tránh file quá dài) ...
+    bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: inlineKeyboard } });
+}
 
-# ================= XỬ LÝ TIN NHẮN (ĐỒNG BỘ API NODE.JS) =================
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = str(update.effective_user.id)
-    text = update.message.text.strip()
-    
-    if chat_id not in user_states:
-        return
+function setupBotLogic() {
+    if (!bot) return;
 
-    # Xử lý nhập tên liên kết tài khoản
-    if user_states[chat_id]['action'] == 'waiting_link_account':
-        brand = user_states[chat_id]['brand']
-        await add_linked_account(chat_id, brand, text)
-        del user_states[chat_id]
-        await update.message.reply_text(f"✅ Đã liên kết `{text}` với *{brand}*!\n👉 Nhấn /start để về menu chính.", parse_mode="Markdown")
+    bot.onText(/\/start/, (msg) => {
+        const chatId = msg.chat.id.toString();
+        const user = msg.from;
+        const isAdmin = (chatId === ADMIN_ID);
 
-    # Xử lý nhập link tăng mắt Live & BẮN API SANG NODE.JS
-    elif user_states[chat_id]['action'] == 'waiting_live_link':
-        platform = user_states[chat_id]['platform']
-        link = text
-        price = 10000 if platform == "TikTok" else 15000
-        
-        balance = await get_or_create_user(chat_id, update.effective_user.first_name)
-        
-        if balance >= price:
-            await update_balance(chat_id, -price) # Trừ tiền
-            del user_states[chat_id]
-            
-            # --- ĐỒNG BỘ VỚI BACKEND NODE.JS ---
-            order_payload = {
-                "serviceType": f"buff_live_{platform.lower()}",
-                "target": link,
-                "quantity": 1000 # Mặc định 1k mắt
-            }
-            
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(NODEJS_API_URL, json=order_payload) as response:
-                        api_result = await response.json()
-                        logging.info(f"API Node.js Response: {api_result}")
-            except Exception as e:
-                logging.error(f"Lỗi khi gọi API Node.js: {e}")
-            # ------------------------------------
+        if (!users[chatId]) {
+            users[chatId] = {
+                name: user.first_name || 'Khách',
+                balance: 1501,
+                voucher: 0,
+                wonCodes: [],
+                linkedAccounts: JSON.parse(JSON.stringify(DEFAULT_LINKED_ACCOUNTS))
+            };
+            saveDatabase();
+        }
 
-            success_msg = (
-                "✅ **TIẾN TRÌNH THÀNH CÔNG!**\n\n"
-                f"📺 Nền tảng: *{platform}*\n"
-                f"🔗 Link: {link}\n"
-                f"💸 Đã thanh toán: `-{price:,} VNĐ`\n\n"
-                "_Mắt sẽ bắt đầu tăng dần trong 1 - 5 phút tới._\n"
-                "👉 Nhấn /start để về menu chính."
-            )
-            await update.message.reply_text(success_msg, parse_mode="Markdown")
-        else:
-            del user_states[chat_id]
-            await update.message.reply_text("❌ **SỐ DƯ KHÔNG ĐỦ!**\nVui lòng nạp thêm tiền để sử dụng dịch vụ.\n👉 Nhấn /start để về menu chính.", parse_mode="Markdown")
+        sendHomeMenu(chatId, users[chatId], isAdmin);
+    });
 
-# ================= HÀM MAIN =================
-def main():
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(init_db())
-    
-    app = ApplicationBuilder().token(BOT1_TOKEN).build()
-    
-    # ... (Khai báo handler như cũ) ...
-    
-    print("🤖 Bot Python đang chạy và đã đồng bộ API...")
-    app.run_polling()
+    bot.on('callback_query', (query) => {
+        const chatId = query.from.id.toString();
+        const data = query.data;
+        const u = users[chatId];
+        if (!u) return;
 
-if __name__ == "__main__":
-    main()
+        if (data === 'buy_code') {
+            let textMenu = `🎟️ *TRUNG TÂM MUA CODE & NHÀ CÁI*\n☕ Chào sếp *${u.name}*\n--------------------------------------------------\n`;
+            let kb = [];
+            Object.keys(u.linkedAccounts).forEach(brand => {
+                let count = u.linkedAccounts[brand].length;
+                textMenu += `• ${brand}: [ ${count} ]\n`;
+                kb.push([{ text: `▶ ${brand} (${count})`, callback_data: `page_${brand}` }]);
+            });
+            kb.push([{ text: '◀ Quay lại', callback_data: 'back_start' }]);
+            bot.editMessageText(textMenu, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
+        }
+        else if (data === 'back_start') {
+            sendHomeMenu(chatId, u, (chatId === ADMIN_ID));
+        }
+        bot.answerCallbackQuery(query.id);
+    });
+}
+
+function startBot(token) {
+    if (bot) {
+        try { bot.stopPolling(); } catch (e) {}
+        bot = null;
+    }
+    try {
+        bot = new TelegramBot(token, { polling: true });
+        setupBotLogic();
+        console.log('🤖 Bot Telegram (Server) đã khởi động thành công!');
+
+        setInterval(() => {
+            try {
+                if (bot && CHANNEL_ID.includes('-100')) {
+                    bot.sendMessage(CHANNEL_ID, getSystemStatusText(), { parse_mode: 'Markdown' });
+                }
+            } catch (e) {}
+        }, 3600000);
+
+        return true;
+    } catch (e) {
+        console.error("❌ Lỗi khởi động bot:", e);
+        return false;
+    }
+}
+
+// ==========================================
+// WEBSOCKET SERVER KHỞI CHẠY
+// ==========================================
+const wss = new WebSocket.Server({ port: WS_PORT });
+
+wss.on('connection', (ws) => {
+    console.log('[+] Một Tab Worker / Client vừa kết nối WebSocket!');
+    masterWebSocket = ws;
+
+    ws.on('message', (message) => {
+        try {
+            const data = JSON.parse(message.toString());
+            console.log('[WS] Nhận dữ liệu:', data);
+        } catch (e) {
+            console.log('[WS Tin nhắn thuần]:', message.toString());
+        }
+    });
+
+    ws.on('close', () => {
+        console.log('[-] Client đã ngắt kết nối WebSocket.');
+        if (masterWebSocket === ws) masterWebSocket = null;
+    });
+});
+
+// Khởi chạy hệ thống
+loadDatabase();
+startBot(currentToken);
+console.log(`🚀 WebSocket Server & Bot đã chạy thành công trên cổng ${WS_PORT}!`);
