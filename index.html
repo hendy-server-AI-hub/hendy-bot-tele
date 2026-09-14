@@ -1,307 +1,224 @@
 <!DOCTYPE html>
-<html lang="vi" class="dark">
+<html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Master Control Panel - Hendy & Hades V6100 System</title>
+    <title>Master Control Panel - Hendy & Hades V6100</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script>
         tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        darker: '#0b0f19',
-                        darkCard: '#111827',
-                        darkBorder: '#1f2937'
-                    }
-                }
-            }
+            theme: { extend: { colors: { darkBg: '#0f172a', darkCard: '#1e293b', darkBorder: '#334155', brand: '#10b981' } } }
         }
     </script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #334155; border-radius: 4px; }
+    </style>
 </head>
-<body class="bg-darker text-gray-100 font-sans antialiased min-h-screen flex flex-col">
+<body class="h-screen flex overflow-hidden">
 
-    <!-- TOP BAR -->
-    <header class="bg-darkCard border-b border-darkBorder sticky top-0 z-50 px-6 py-4 flex justify-between items-center">
-        <div class="flex items-center space-x-4">
-            <button id="sidebarToggle" class="text-gray-400 hover:text-white focus:outline-none text-xl"><i class="fa-solid fa-bars"></i></button>
-            <div class="flex items-center space-x-2">
-                <div class="bg-emerald-500 w-3 h-3 rounded-full animate-pulse"></div>
-                <h1 class="text-lg font-bold tracking-wider text-emerald-400">HENDY & HADES <span class="text-xs px-2 py-0.5 bg-emerald-900/50 text-emerald-300 rounded border border-emerald-700">V6100</span></h1>
-            </div>
+    <!-- Sidebar -->
+    <aside class="w-64 bg-darkCard border-r border-darkBorder flex flex-col hidden md:flex">
+        <div class="h-16 flex items-center px-6 border-b border-darkBorder">
+            <h1 class="text-brand font-bold text-lg"><i class="fa-solid fa-bolt mr-2"></i>HENDY V6100</h1>
         </div>
-        <div class="flex items-center space-x-6">
-            <div id="wsStatus" class="flex items-center space-x-2 text-xs bg-red-950/80 text-red-400 px-3 py-1.5 rounded-full border border-red-800">
-                <i class="fa-solid fa-circle-notch animate-spin"></i>
-                <span>WebSocket: Đang kết nối...</span>
+        <nav class="flex-1 p-4 space-y-2">
+            <button onclick="switchTab('hub')" class="w-full flex items-center text-left px-4 py-3 rounded-xl bg-brand/10 text-brand font-medium transition hover:bg-brand/20">
+                <i class="fa-solid fa-robot w-6"></i> AI Đa Phiên (Hub)
+            </button>
+            <button onclick="switchTab('orders')" class="w-full flex items-center text-left px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-darkBorder transition">
+                <i class="fa-solid fa-box-open w-6"></i> Quản lý Đơn SMM
+            </button>
+            <button onclick="switchTab('settings')" class="w-full flex items-center text-left px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-darkBorder transition">
+                <i class="fa-solid fa-gear w-6"></i> Cài Đặt & Broadcast
+            </button>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col h-full overflow-hidden relative">
+        <!-- Header -->
+        <header class="h-16 bg-darkCard border-b border-darkBorder flex items-center justify-between px-6">
+            <h2 class="font-semibold text-lg text-gray-200">Bảng Điều Khiển Trung Tâm</h2>
+            <div class="flex items-center gap-2 text-sm bg-darkBg px-3 py-1.5 rounded-full border border-darkBorder">
+                <div id="wsStatusDot" class="w-2.5 h-2.5 rounded-full bg-red-500"></div>
+                <span id="wsStatusText" class="text-gray-400">Đang kết nối WebSocket...</span>
             </div>
-            <div id="liveClock" class="text-sm font-semibold text-gray-200 hidden sm:block">00:00:00</div>
+        </header>
+
+        <!-- Container -->
+        <div class="flex-1 overflow-y-auto p-6 custom-scrollbar">
+            
+            <!-- TAB: AI MULTI-SESSION HUB -->
+            <div id="tab-hub" class="tab-content active space-y-6">
+                <div class="flex justify-between items-end">
+                    <div>
+                        <h3 class="text-2xl font-bold text-white"><i class="fa-solid fa-microchip text-brand mr-2"></i>Hades AI Multi-Session Hub</h3>
+                        <p class="text-sm text-gray-400 mt-1">Hệ thống phân luồng, giả lập bot tự động chạy đơn SMM</p>
+                    </div>
+                    <button onclick="runAllAI()" class="bg-brand hover:bg-emerald-400 text-darkBg font-bold px-5 py-2.5 rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.3)] transition transform hover:scale-105">
+                        <i class="fa-solid fa-play mr-2"></i>Kích Hoạt AI Chạy Tất Cả Đơn
+                    </button>
+                </div>
+
+                <!-- Lưới hiển thị các phiên Bot đang chạy -->
+                <div class="bg-darkCard border border-darkBorder p-5 rounded-2xl">
+                    <h4 class="text-xs font-bold text-gray-400 uppercase mb-4">Các Phiên Bot Đang Hoạt Động (<span id="aiActiveCount" class="text-brand">0</span>)</h4>
+                    <div id="aiSessionsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        <div class="text-gray-500 text-sm italic col-span-full">Hệ thống đang rảnh, không có bot nào đang chạy.</div>
+                    </div>
+                </div>
+
+                <!-- Log hệ thống -->
+                <div class="bg-darkCard border border-darkBorder p-5 rounded-2xl">
+                    <h4 class="text-xs font-bold text-gray-400 uppercase mb-4">Nhật Ký Hệ Thống Thời Gian Thực</h4>
+                    <div id="systemLogs" class="h-48 overflow-y-auto font-mono text-[13px] text-emerald-400 space-y-1 bg-black/50 p-4 rounded-xl border border-darkBorder custom-scrollbar">
+                        <!-- Logs inject here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: QUẢN LÝ ĐƠN HÀNG -->
+            <div id="tab-orders" class="tab-content">
+                <h3 class="text-xl font-bold text-white mb-6">Danh Sách Đơn Hàng SMM</h3>
+                <div class="bg-darkCard border border-darkBorder rounded-2xl overflow-hidden">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-darkBg border-b border-darkBorder text-gray-400">
+                            <tr>
+                                <th class="px-6 py-4 font-medium">Mã Đơn</th>
+                                <th class="px-6 py-4 font-medium">Dịch Vụ</th>
+                                <th class="px-6 py-4 font-medium">Mục Tiêu (Link)</th>
+                                <th class="px-6 py-4 font-medium">Số Lượng</th>
+                                <th class="px-6 py-4 font-medium">Trạng Thái</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ordersTableBody" class="divide-y divide-darkBorder">
+                            <!-- Đơn hàng inject via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB: CÀI ĐẶT & BROADCAST -->
+            <div id="tab-settings" class="tab-content max-w-2xl">
+                <div class="bg-darkCard border border-darkBorder p-6 rounded-2xl space-y-4">
+                    <h3 class="text-lg font-bold text-white"><i class="fa-solid fa-bullhorn text-amber-400 mr-2"></i>Gửi Thông Báo Broadcast</h3>
+                    <p class="text-sm text-gray-400">Tin nhắn sẽ được gửi đến toàn bộ khách hàng trên Bot Telegram.</p>
+                    <textarea id="broadcastMsg" rows="4" class="w-full bg-darkBg border border-darkBorder rounded-xl p-4 text-sm text-white focus:outline-none focus:border-brand" placeholder="Nhập nội dung thông báo..."></textarea>
+                    <button onclick="sendBroadcast()" class="bg-amber-500 hover:bg-amber-400 text-darkBg font-bold px-6 py-2.5 rounded-xl transition">
+                        <i class="fa-solid fa-paper-plane mr-2"></i>Gửi Hàng Loạt
+                    </button>
+                </div>
+            </div>
+
         </div>
-    </header>
+    </main>
 
-    <div class="flex flex-1 overflow-hidden">
-        <!-- SIDEBAR -->
-        <aside id="sidebar" class="w-64 bg-darkCard border-r border-darkBorder flex flex-col transition-all duration-300 z-40">
-            <div class="p-4 space-y-1">
-                <a href="#dashboard" onclick="switchTab('dashboard')" class="nav-btn flex items-center space-x-3 px-4 py-3 rounded-xl bg-emerald-600 text-white font-medium transition">
-                    <i class="fa-solid fa-chart-pie w-5"></i><span>Dashboard chính</span>
-                </a>
-                <a href="#hub" onclick="switchTab('hub')" class="nav-btn flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 hover:text-white font-medium transition">
-                    <i class="fa-solid fa-robot w-5"></i><span>Hades V6100 Hub</span>
-                </a>
-                <a href="#orders" onclick="switchTab('orders')" class="nav-btn flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 hover:text-white font-medium transition">
-                    <i class="fa-solid fa-box-archive w-5"></i><span>Giám Sát Đơn SMM</span>
-                </a>
-                <a href="#settings" onclick="switchTab('settings')" class="nav-btn flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:bg-gray-800 hover:text-white font-medium transition">
-                    <i class="fa-solid fa-gears w-5"></i><span>Cài Đặt Hệ Thống</span>
-                </a>
-            </div>
-        </aside>
-
-        <!-- MAIN CONTENT -->
-        <main class="flex-1 overflow-y-auto p-6 space-y-6 bg-darker">
-
-            <!-- TAB 1: DASHBOARD -->
-            <section id="tab-dashboard" class="tab-content space-y-6">
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div class="bg-darkCard border border-darkBorder p-5 rounded-2xl">
-                        <div class="text-xs text-gray-400 font-medium">Tổng Khách Hàng Telegram</div>
-                        <div id="statUsers" class="text-2xl font-bold text-white mt-1">0</div>
-                    </div>
-                    <div class="bg-darkCard border border-darkBorder p-5 rounded-2xl">
-                        <div class="text-xs text-gray-400 font-medium">Tổng Số Dư Ví Hệ Thống</div>
-                        <div id="statBalance" class="text-2xl font-bold text-emerald-400 mt-1">0 đ</div>
-                    </div>
-                    <div class="bg-darkCard border border-darkBorder p-5 rounded-2xl">
-                        <div class="text-xs text-gray-400 font-medium">Tổng Đơn Hàng Hoàn Thành</div>
-                        <div id="statOrdersCount" class="text-2xl font-bold text-sky-400 mt-1">0</div>
-                    </div>
-                </div>
-
-                <!-- BRAND STATUSES -->
-                <div class="bg-darkCard border border-darkBorder rounded-2xl p-6 space-y-4">
-                    <h2 class="text-lg font-bold text-white"><i class="fa-solid fa-server text-emerald-400 mr-2"></i>Trạng Thái Gateway & Thương Hiệu</h2>
-                    <div id="brandStatusGrid" class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <!-- Rendered dynamically -->
-                    </div>
-                </div>
-            </section>
-
-            <!-- TAB 2: HADES V6100 HUB -->
-            <section id="tab-hub" class="tab-content space-y-6 hidden">
-                <div class="bg-darkCard border border-darkBorder rounded-2xl p-6 space-y-6">
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                        <div>
-                            <h2 class="text-xl font-bold text-white flex items-center"><i class="fa-solid fa-robot text-emerald-400 mr-2"></i>ĐIỀU KHIỂN HỆ THỐNG ĐA PHIÊN BOT HUB</h2>
-                            <div class="text-xs text-gray-400 mt-1">[HADES_CORE: ONLINE] • Trạng thái WebSocket: Đã kết nối • Độ trễ mạng: <span id="pingValue" class="text-emerald-400 font-mono">-- ms</span></div>
-                        </div>
-                        <div class="flex gap-2">
-                            <button onclick="triggerAction('RUN_ALL')" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition"><i class="fa-solid fa-play mr-1"></i> Chạy Tất Cả</button>
-                            <button onclick="triggerAction('STOP_ALL')" class="bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition"><i class="fa-solid fa-stop mr-1"></i> Dừng Lại</button>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="bg-darker border border-darkBorder p-4 rounded-2xl space-y-2">
-                            <div class="text-xs font-bold text-gray-400 uppercase"><i class="fa-solid fa-terminal mr-1"></i> Nhật ký hệ thống</div>
-                            <div id="sysLogBox" class="bg-black/40 p-3 rounded-xl font-mono text-xs text-emerald-400 h-40 overflow-y-auto space-y-1">
-                                <div>[15:00:00] [SYSTEM] Khởi tạo bảng điều khiển Master Control Panel thành công.</div>
-                            </div>
-                        </div>
-                        <div class="bg-darker border border-darkBorder p-4 rounded-2xl space-y-2">
-                            <div class="text-xs font-bold text-gray-400 uppercase"><i class="fa-solid fa-comments mr-1"></i> Thông báo đơn hàng thời gian thực</div>
-                            <div id="chatLogBox" class="bg-black/40 p-3 rounded-xl font-mono text-xs text-sky-400 h-40 overflow-y-auto space-y-1">
-                                <div>[15:00:00] [ws] Đang lắng nghe sự kiện từ Telegram Bot...</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- TAB 3: GIÁM SÁT ĐƠN SMM -->
-            <section id="tab-orders" class="tab-content space-y-6 hidden">
-                <div class="bg-darkCard border border-darkBorder rounded-2xl p-6 space-y-4">
-                    <div class="flex justify-between items-center">
-                        <h2 class="text-xl font-bold text-white"><i class="fa-solid fa-box-archive text-sky-400 mr-2"></i>Danh Sách Đơn Hàng SMM Mới Nhất</h2>
-                        <button onclick="exportCSV()" class="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition"><i class="fa-solid fa-file-excel mr-1"></i> Xuất Báo Cáo</button>
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left border-collapse">
-                            <thead>
-                                <tr class="border-b border-darkBorder text-xs text-gray-400 uppercase bg-darker/50">
-                                    <th class="p-3.5">Mã Đơn</th>
-                                    <th class="p-3.5">Khách Hàng</th>
-                                    <th class="p-3.5">Dịch Vụ</th>
-                                    <th class="p-3.5">Link / Mục Tiêu</th>
-                                    <th class="p-3.5">Số Lượng</th>
-                                    <th class="p-3.5">Tổng Tiền</th>
-                                    <th class="p-3.5">Trạng Thái</th>
-                                </tr>
-                            </thead>
-                            <tbody id="ordersTableBody" class="text-sm divide-y divide-darkBorder">
-                                <!-- Rendered dynamically -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </section>
-
-            <!-- TAB 4: CÀI ĐẶT -->
-            <section id="tab-settings" class="tab-content space-y-6 hidden">
-                <div class="bg-darkCard border border-darkBorder rounded-2xl p-6 space-y-6 max-w-xl">
-                    <h2 class="text-xl font-bold text-white"><i class="fa-solid fa-gears text-amber-400 mr-2"></i>Cấu Hình Hệ Thống</h2>
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-xs font-medium text-gray-400 mb-1">Trạng thái kết nối WebSocket Server:</label>
-                            <input type="text" disabled value="WebSocket Active (Port 8080)" class="w-full bg-darker border border-darkBorder rounded-xl px-4 py-2.5 text-sm text-emerald-400 font-mono">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-gray-400 mb-1">Đường dẫn cơ sở dữ liệu (Database File):</label>
-                            <input type="text" disabled value="database.json" class="w-full bg-darker border border-darkBorder rounded-xl px-4 py-2.5 text-sm text-gray-300 font-mono">
-                        </div>
-                        <button onclick="alert('Đã lưu cấu hình hệ thống!')" class="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition">Lưu Thay Đổi</button>
-                    </div>
-                </div>
-            </section>
-
-        </main>
-    </div>
-
-    <!-- CLIENT SCRIPT -->
     <script>
-        setInterval(() => {
-            document.getElementById('liveClock').innerText = new Date().toLocaleTimeString('vi-VN');
-        }, 1000);
-
-        document.getElementById('sidebarToggle').addEventListener('click', () => {
-            const sb = document.getElementById('sidebar');
-            sb.classList.toggle('w-64');
-            sb.classList.toggle('w-20');
-            sb.querySelectorAll('span').forEach(el => el.classList.toggle('hidden'));
-        });
-
+        // Tab Switcher
         function switchTab(tabId) {
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-            document.getElementById('tab-' + tabId).classList.remove('hidden');
-            document.querySelectorAll('.nav-btn').forEach(btn => {
-                btn.classList.remove('bg-emerald-600', 'text-white');
-                btn.classList.add('text-gray-400', 'hover:bg-gray-800', 'hover:text-white');
-            });
-            event.currentTarget.classList.add('bg-emerald-600', 'text-white');
-            event.currentTarget.classList.remove('text-gray-400', 'hover:bg-gray-800', 'hover:text-white');
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.getElementById(`tab-${tabId}`).classList.add('active');
         }
 
-        let globalOrders = [];
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-        let ws;
+        // WebSocket Connection
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}`;
+        const ws = new WebSocket(wsUrl);
 
-        function connectWs() {
-            ws = new WebSocket(wsProtocol + window.location.host);
-            const statusEl = document.getElementById('wsStatus');
+        ws.onopen = () => {
+            document.getElementById('wsStatusDot').classList.replace('bg-red-500', 'bg-brand');
+            document.getElementById('wsStatusText').innerText = 'Đã kết nối Hub';
+            document.getElementById('wsStatusText').classList.replace('text-gray-400', 'text-brand');
+        };
 
-            ws.onopen = () => {
-                statusEl.className = 'flex items-center space-x-2 text-xs bg-emerald-950/80 text-emerald-400 px-3 py-1.5 rounded-full border border-emerald-800';
-                statusEl.innerHTML = '<i class="fa-solid fa-circle text-emerald-500 text-[8px]"></i><span>WebSocket: Đã kết nối Hub</span>';
-                addSysLog('Kết nối WebSocket thành công.');
-            };
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
 
-            ws.onmessage = (event) => {
-                try {
-                    const msg = JSON.parse(event.data);
-                    if (msg.type === 'INIT_DATA') {
-                        // 🚀 Đồng bộ dữ liệu ban đầu từ server
-                        document.getElementById('statUsers').innerText = msg.totalUsers;
-                        document.getElementById('statBalance').innerText = msg.totalBalance.toLocaleString() + ' đ';
-                        globalOrders = msg.orders || [];
-                        renderOrders();
-                        updateDashboardStats();
-                        renderBrandStatuses(msg.brandStatuses);
-                        addSysLog(`Đã tải đồng bộ ${msg.totalUsers} khách hàng và ${globalOrders.length} đơn hàng.`);
-                    } else if (msg.type === 'NEW_SMM_ORDER') {
-                        globalOrders.unshift(msg.order);
-                        addChatLog(`Khách ${msg.user.name} đặt đơn ${msg.order.id} (${msg.order.serviceName})`);
-                        renderOrders();
-                        updateDashboardStats();
-                    } else if (msg.type === 'PONG') {
-                        const ping = Date.now() - msg.timestamp;
-                        document.getElementById('pingValue').innerText = ping + ' ms';
-                    }
-                } catch (e) {}
-            };
-
-            ws.onclose = () => {
-                statusEl.className = 'flex items-center space-x-2 text-xs bg-red-950/80 text-red-400 px-3 py-1.5 rounded-full border border-red-800';
-                statusEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i><span>Mất kết nối WS</span>';
-                setTimeout(connectWs, 3000);
-            };
-        }
-
-        function renderBrandStatuses(statuses) {
-            const grid = document.getElementById('brandStatusGrid');
-            if (!statuses || !grid) return;
-            grid.innerHTML = Object.keys(statuses).map(brand => `
-                <div class="bg-darker border border-darkBorder p-4 rounded-xl flex justify-between items-center">
-                    <span class="font-bold text-white">${brand}</span>
-                    <span class="text-xs px-2.5 py-1 bg-emerald-950 text-emerald-400 rounded-full border border-emerald-800">${statuses[brand].status} (Ping: ${statuses[brand].ping}ms)</span>
-                </div>
-            `).join('');
-        }
-
-        function addSysLog(text) {
-            const box = document.getElementById('sysLogBox');
-            if (!box) return;
-            box.innerHTML += `<div>[${new Date().toLocaleTimeString()}] [SYSTEM] ${text}</div>`;
-            box.scrollTop = box.scrollHeight;
-        }
-
-        function addChatLog(text) {
-            const box = document.getElementById('chatLogBox');
-            if (!box) return;
-            box.innerHTML += `<div>[${new Date().toLocaleTimeString()}] [ws] ${text}</div>`;
-            box.scrollTop = box.scrollHeight;
-        }
-
-        function renderOrders() {
-            const tbody = document.getElementById('ordersTableBody');
-            if (!tbody) return;
-            if (globalOrders.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500 italic">Chưa có đơn hàng nào trong hệ thống.</td></tr>';
-                return;
+            // 1. Cập nhật Log hệ thống AI
+            if (data.type === 'AI_SYSTEM_LOG') {
+                const logBox = document.getElementById('systemLogs');
+                const p = document.createElement('div');
+                p.innerHTML = `<span class="text-gray-500">[${data.timestamp}]</span> ${data.text}`;
+                logBox.appendChild(p);
+                logBox.scrollTop = logBox.scrollHeight; // Auto cuộn xuống
             }
-            tbody.innerHTML = globalOrders.map(o => `
-                <tr class="hover:bg-darker/50 transition">
-                    <td class="p-3.5 font-mono text-emerald-400 font-semibold">${o.id}</td>
-                    <td class="p-3.5 text-white font-medium">${o.userName || 'Khách'}</td>
-                    <td class="p-3.5 text-gray-300 font-medium">${o.serviceName}</td>
-                    <td class="p-3.5 text-gray-400 font-mono text-xs max-w-xs truncate"><a href="${o.link}" target="_blank" class="hover:underline text-sky-400">${o.link}</a></td>
-                    <td class="p-3.5 font-mono">${o.quantity.toLocaleString()}</td>
-                    <td class="p-3.5 font-mono text-amber-400">${o.totalCost.toLocaleString()} đ</td>
-                    <td class="p-3.5"><span class="px-2.5 py-1 bg-emerald-950 text-emerald-400 text-xs rounded-full border border-emerald-800">${o.status}</span></td>
-                </tr>
-            `).join('');
-        }
-
-        function updateDashboardStats() {
-            document.getElementById('statOrdersCount').innerText = globalOrders.length;
-        }
-
-        function triggerAction(action) {
-            addSysLog(`Đã thực thi lệnh: ${action}`);
-        }
-
-        function exportCSV() {
-            alert('Đã xuất báo cáo đơn hàng thành công!');
-        }
-
-        setInterval(() => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ action: 'PING', timestamp: Date.now() }));
+            
+            // 2. Cập nhật Grid các Bot đang chạy
+            if (data.type === 'AI_SESSIONS_UPDATE') {
+                document.getElementById('aiActiveCount').innerText = data.activeCount;
+                const grid = document.getElementById('aiSessionsGrid');
+                if (data.sessions.length === 0) {
+                    grid.innerHTML = '<div class="text-gray-500 text-sm italic col-span-full">Hệ thống đang rảnh, không có bot nào đang chạy.</div>';
+                    return;
+                }
+                grid.innerHTML = data.sessions.map(s => `
+                    <div class="bg-darkBg border border-darkBorder p-4 rounded-xl flex flex-col gap-3 relative overflow-hidden">
+                        <!-- Progress bar background -->
+                        <div class="absolute bottom-0 left-0 h-1 bg-brand/20 w-full">
+                            <div class="h-full bg-brand transition-all duration-500" style="width: ${s.progress}%"></div>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs font-bold text-white bg-darkCard px-2 py-1 rounded"><i class="fa-solid fa-robot mr-1 text-gray-400"></i>${s.id}</span>
+                            <span class="text-[10px] uppercase px-2 py-0.5 rounded-full ${s.status === 'RUNNING' ? 'bg-blue-500/20 text-blue-400' : 'bg-brand/20 text-brand'}">${s.status}</span>
+                        </div>
+                        <div class="text-xs text-gray-400 truncate">Mục tiêu: <span class="text-blue-400">${s.targetLink}</span></div>
+                        <div class="flex justify-between items-end mt-1">
+                            <div class="text-2xl font-bold text-white">${s.progress}%</div>
+                            <div class="text-[10px] text-gray-500">Đơn: #${s.orderId}</div>
+                        </div>
+                    </div>
+                `).join('');
             }
-        }, 5000);
 
-        connectWs();
+            // 3. Cập nhật Bảng Đơn Hàng
+            if (data.type === 'ORDERS_UPDATED') {
+                const tbody = document.getElementById('ordersTableBody');
+                tbody.innerHTML = data.orders.reverse().map(o => {
+                    let statusColor = o.status === 'Hoàn thành' ? 'text-brand bg-brand/10' : (o.status === 'Đang xử lý' ? 'text-blue-400 bg-blue-400/10' : 'text-amber-400 bg-amber-400/10');
+                    return `
+                    <tr class="hover:bg-darkBorder/30 transition">
+                        <td class="px-6 py-4 font-mono text-gray-300">#${o.id}</td>
+                        <td class="px-6 py-4 text-white">${o.service}</td>
+                        <td class="px-6 py-4 text-blue-400 text-xs truncate max-w-[200px]"><a href="${o.link}" target="_blank">${o.link}</a></td>
+                        <td class="px-6 py-4 text-gray-300 font-bold">${o.quantity.toLocaleString()}</td>
+                        <td class="px-6 py-4"><span class="px-3 py-1 text-xs rounded-full ${statusColor}">${o.status}</span></td>
+                    </tr>
+                    `;
+                }).join('');
+            }
+        };
+
+        ws.onclose = () => {
+            document.getElementById('wsStatusText').innerText = 'Mất kết nối. Đang thử lại...';
+            document.getElementById('wsStatusDot').classList.replace('bg-brand', 'bg-red-500');
+        };
+
+        // API Triggers
+        async function runAllAI() {
+            try {
+                const res = await fetch('/api/ai/run-all', { method: 'POST' });
+                const data = await res.json();
+                // Toast notification (có thể dùng thư viện toast tùy sếp)
+                console.log(data.message); 
+            } catch(e) { alert('Lỗi mạng!'); }
+        }
+
+        async function sendBroadcast() {
+            const msg = document.getElementById('broadcastMsg').value;
+            if(!msg) return alert('Nhập nội dung sếp ơi!');
+            if(!confirm('Gửi cho tất cả user?')) return;
+            try {
+                const res = await fetch('/api/broadcast', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({message: msg}) });
+                const data = await res.json();
+                alert(`Đã gửi thành công tới ${data.successCount} users!`);
+                document.getElementById('broadcastMsg').value = '';
+            } catch(e) { alert('Lỗi mạng!'); }
+        }
     </script>
 </body>
 </html>
