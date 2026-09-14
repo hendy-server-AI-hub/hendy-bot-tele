@@ -1,6 +1,6 @@
 {
   "name": "hendy-hades-v6100-system",
-  "version": "6.100.0",
+  "version": "6.1.0",
   "description": "Master Control Panel - Hendy & Hades V6100 System",
   "main": "server.js",
   "scripts": {
