@@ -1,7 +1,7 @@
 {
   "name": "hendy-hades-v6100-system",
-  "version": "6.1.0",
-  "description": "Master Control Panel - Hendy & Hades V6100 System",
+  "version": "6.1.00",
+  "description": "Master Control Panel - Hendy & Hades V6100 SMM & Bot Hub System",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
