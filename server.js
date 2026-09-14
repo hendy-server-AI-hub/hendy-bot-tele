@@ -1,9 +1,9 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const path = require('path');
-const TelegramBotModule = require('node-telegram-bot-api');
-const TelegramBot = TelegramBotModule.default || TelegramBotModule;
-const WebSocket = require('ws');
+const TelegramBot = require('node-telegram-bot-api');
+const { WebSocketServer, WebSocket } = require('ws');
 const fs = require('fs');
 const cors = require('cors');
 
@@ -11,7 +11,7 @@ const cors = require('cors');
 // ⚙️ CẤU HÌNH HỆ THỐNG CƠ BẢN
 // ==========================================
 const PORT = process.env.PORT || 8080;
-const BOT_TOKEN = process.env.BOT_TOKEN || '8689114890:AAFBFM0rNtZWpOtAovIPHPVQTJVp0odU1DQ';
+const BOT_TOKEN = process.env.BOT_TOKEN || process.env.TELEGRAM_TOKEN || '8689114890:AAFBFM0rNtZWpOtAovIPHPVQTJVp0odU1DQ';
 const ADMIN_ID = process.env.ADMIN_ID || '6138197737';
 const CHANNEL_ID = process.env.CHANNEL_ID || '-100xxxxxxxxx';
 
@@ -23,7 +23,7 @@ const BANK_CONFIG = {
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocketServer({ server });
 
 app.use(cors());
 app.use(express.json());
@@ -31,7 +31,12 @@ app.use(express.static(__dirname));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    const indexPath = path.join(__dirname, 'index.html');
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.send('Server Hendy & Hades V6100 đang hoạt động.');
+    }
 });
 
 // ==========================================
@@ -71,7 +76,6 @@ function loadDatabase() {
                 }
             });
 
-            // Đồng bộ đơn hàng từ users sang hệ thống quản lý orders
             Object.values(users).forEach(u => {
                 if (Array.isArray(u.orders)) {
                     u.orders.forEach(o => {
@@ -82,14 +86,14 @@ function loadDatabase() {
                 }
             });
 
-            console.log(`✅ Đã tải dữ liệu của ${Object.keys(users).length} khách hàng và ${Object.keys(orders).length} đơn hàng.`);
+            console.log(`✅ Đã tải dữ liệu: ${Object.keys(users).length} người dùng | ${Object.keys(orders).length} đơn hàng.`);
         } else {
             users = {};
             orders = {};
             saveDatabase();
         }
     } catch (err) {
-        console.error('❌ Lỗi đọc database:', err);
+        console.error('❌ Lỗi đọc database:', err.message);
         users = {};
         orders = {};
     }
@@ -99,7 +103,7 @@ function saveDatabase() {
     try {
         fs.writeFileSync(DB_FILE, JSON.stringify({ users, orders }, null, 4), 'utf8');
     } catch (err) {
-        console.error('❌ Lỗi lưu database:', err);
+        console.error('❌ Lỗi lưu database:', err.message);
     }
 }
 
@@ -252,6 +256,7 @@ class AISessionManager {
 
     async runWorkerSession(sessionId, order) {
         const session = this.activeSessions.get(sessionId);
+        if (!session) return;
         const targetQty = parseInt(order.quantity) || 100;
         let completed = 0;
 
@@ -313,7 +318,10 @@ const aiEngine = new AISessionManager(10);
 // 🌐 REST API ENDPOINTS
 // ==========================================
 
-// Kích hoạt AI chạy toàn bộ đơn hàng ở trạng thái "Đang chờ"
+app.get('/health', (req, res) => {
+    res.json({ status: 'OK', system: 'Master Control Panel V6100' });
+});
+
 app.post('/api/ai/run-all', (req, res) => {
     let count = 0;
     Object.values(orders).forEach(order => {
@@ -325,34 +333,39 @@ app.post('/api/ai/run-all', (req, res) => {
     res.json({ success: true, message: `Đã đẩy ${count} đơn vào hệ thống AI đa phiên.` });
 });
 
-// Gửi thông báo Broadcast hàng loạt
 app.post('/api/broadcast', async (req, res) => {
     const { message } = req.body;
+    if (!message) return res.status(400).json({ error: 'Nội dung không được để trống' });
     let success = 0, fail = 0;
-    for (const chatId of Object.keys(users)) {
-        try {
-            await bot.sendMessage(chatId, `📢 *THÔNG BÁO TỪ HỆ THỐNG*\n\n${message}`, { parse_mode: 'Markdown' });
-            success++;
-        } catch (e) { fail++; }
+    if (bot) {
+        for (const chatId of Object.keys(users)) {
+            try {
+                await bot.sendMessage(chatId, `📢 *THÔNG BÁO TỪ HỆ THỐNG*\n\n${message}`, { parse_mode: 'Markdown' });
+                success++;
+            } catch (e) { fail++; }
+        }
     }
     aiEngine.broadcastLog(`[BROADCAST] Đã gửi thông báo tới ${success} user (${fail} lỗi).`);
-    res.json({ success: true, successCount: success });
+    res.json({ success: true, successCount: success, failCount: fail });
 });
 
-// VietQR Webhook (Tự động nạp tiền)
 app.post('/api/vietqr-webhook', async (req, res) => {
     try {
         const { content, transferAmount } = req.body;
-        const match = content.match(/NAP\s+(\d+)/i);
-        if (match && users[match[1]]) {
-            const chatId = match[1];
-            users[chatId].balance += Number(transferAmount);
-            saveDatabase();
-            
-            if (bot) {
-                bot.sendMessage(chatId, `🎉 *NẠP TIỀN THÀNH CÔNG!*\n💰 Bạn vừa được cộng +${Number(transferAmount).toLocaleString()} VNĐ.`, { parse_mode: 'Markdown' });
+        if (content) {
+            const match = content.match(/NAP\s+(\d+)/i);
+            if (match && users[match[1]]) {
+                const chatId = match[1];
+                users[chatId].balance += Number(transferAmount || 0);
+                saveDatabase();
+                
+                if (bot) {
+                    try {
+                        bot.sendMessage(chatId, `🎉 *NẠP TIỀN THÀNH CÔNG!*\n💰 Bạn vừa được cộng +${Number(transferAmount).toLocaleString()} VNĐ.`, { parse_mode: 'Markdown' });
+                    } catch (e) {}
+                }
+                aiEngine.broadcastLog(`[FINANCE] Auto-Deposit: +${transferAmount} VNĐ cho user ${chatId}`);
             }
-            aiEngine.broadcastLog(`[FINANCE] Auto-Deposit: +${transferAmount} VNĐ cho user ${chatId}`);
         }
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -367,7 +380,7 @@ function sendHomeMenu(chatId, u, isAdmin) {
 Chào mừng sếp, *${u.name}*
 --------------------------------------------------
 💎 *Phân quyền:* ${isAdmin ? '👑 ADMIN TỐI CAO' : '👤 KHÁCH HÀNG'}
-💰 **Ví Chính:** \`${u.balance.toLocaleString()} VNĐ\`
+💰 **Ví Chính:** \`${(u.balance || 0).toLocaleString()} VNĐ\`
 --------------------------------------------------
 👉 Chọn dịch vụ cần giao dịch bên dưới:
     `;
@@ -380,7 +393,7 @@ Chào mừng sếp, *${u.name}*
         [{ text: '👥 NHÓM HỖ TRỢ', url: 'https://t.me/Hendy_Support_Group' }]
     ];
 
-    bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: inlineKeyboard } });
+    bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: inlineKeyboard } }).catch(() => {});
 }
 
 function setupBotLogic() {
@@ -421,7 +434,7 @@ function setupBotLogic() {
             if (u.actionState) delete u.actionState;
             if (adminSession[chatId]) delete adminSession[chatId];
             saveDatabase();
-            bot.sendMessage(chatId, '🚫 Đã hủy thao tác hiện tại.');
+            bot.sendMessage(chatId, '🚫 Đã hủy thao tác hiện tại.').catch(() => {});
             sendHomeMenu(chatId, u, (chatId === ADMIN_ID));
             return;
         }
@@ -431,7 +444,7 @@ function setupBotLogic() {
             const amount = parseInt(text.replace(/[,.]/g, ''));
 
             if (isNaN(amount) || amount <= 0) {
-                bot.sendMessage(chatId, '❌ Số tiền không hợp lệ. Vui lòng chỉ nhập số (VD: 50000). Gõ /cancel để hủy.');
+                bot.sendMessage(chatId, '❌ Số tiền không hợp lệ. Vui lòng chỉ nhập số (VD: 50000). Gõ /cancel để hủy.').catch(() => {});
                 return;
             }
 
@@ -439,24 +452,24 @@ function setupBotLogic() {
             const targetUser = users[targetId];
 
             if (!targetUser) {
-                bot.sendMessage(chatId, '❌ Không tìm thấy thông tin khách hàng này.');
+                bot.sendMessage(chatId, '❌ Không tìm thấy thông tin khách hàng này.').catch(() => {});
                 delete adminSession[chatId];
                 return;
             }
 
             if (session.action === 'ADD') {
-                targetUser.balance += amount;
+                targetUser.balance = (targetUser.balance || 0) + amount;
                 saveDatabase();
-                bot.sendMessage(chatId, `✅ Đã CỘNG thành công \`${amount.toLocaleString()} VNĐ\` cho khách *${targetUser.name}*.\n💰 Số dư mới: \`${targetUser.balance.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' });
+                bot.sendMessage(chatId, `✅ Đã CỘNG thành công \`${amount.toLocaleString()} VNĐ\` cho khách *${targetUser.name}*.\n💰 Số dư mới: \`${targetUser.balance.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' }).catch(() => {});
                 try {
-                    bot.sendMessage(targetId, `💳 *TÀI KHOẢN ĐÃ ĐƯỢC NẠP / CỘNG TIỀN!*\n\n💰 Số tiền: \`+${amount.toLocaleString()} VNĐ\`\n💎 Số dư: \`${targetUser.balance.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' });
+                    bot.sendMessage(targetId, `💳 *TÀI KHOẢN ĐÃ ĐƯỢC NẠP / CỘNG TIỀN!*\n\n💰 Số tiền: \`+${amount.toLocaleString()} VNĐ\`\n💎 Số dư: \`${targetUser.balance.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' }).catch(() => {});
                 } catch (e) {}
             } else if (session.action === 'SUB') {
-                targetUser.balance -= amount;
+                targetUser.balance = Math.max(0, (targetUser.balance || 0) - amount);
                 saveDatabase();
-                bot.sendMessage(chatId, `✅ Đã TRỪ \`${amount.toLocaleString()} VNĐ\` của khách *${targetUser.name}*.\n💰 Số dư mới: \`${targetUser.balance.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' });
+                bot.sendMessage(chatId, `✅ Đã TRỪ \`${amount.toLocaleString()} VNĐ\` của khách *${targetUser.name}*.\n💰 Số dư mới: \`${targetUser.balance.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' }).catch(() => {});
                 try {
-                    bot.sendMessage(targetId, `⚠️ *THÔNG BÁO TRỪ TIỀN VÍ*\n\n📉 Số tiền: \`-${amount.toLocaleString()} VNĐ\`\n💎 Số dư: \`${targetUser.balance.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' });
+                    bot.sendMessage(targetId, `⚠️ *THÔNG BÁO TRỪ TIỀN VÍ*\n\n📉 Số tiền: \`-${amount.toLocaleString()} VNĐ\`\n💎 Số dư: \`${targetUser.balance.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' }).catch(() => {});
                 } catch (e) {}
             }
 
@@ -468,7 +481,7 @@ function setupBotLogic() {
             u.actionState.link = text;
             u.actionState.step = 'WAITING_QUANTITY';
             saveDatabase();
-            bot.sendMessage(chatId, `🔗 Đã nhận Link mục tiêu.\n\n👉 *Vui lòng nhập số lượng bạn muốn tăng:* (Chỉ nhập số, VD: 1000)\n\n_(Gõ /cancel để hủy)_`, { parse_mode: 'Markdown' });
+            bot.sendMessage(chatId, `🔗 Đã nhận Link mục tiêu.\n\n👉 *Vui lòng nhập số lượng bạn muốn tăng:* (Chỉ nhập số, VD: 1000)\n\n_(Gõ /cancel để hủy)_`, { parse_mode: 'Markdown' }).catch(() => {});
             return;
         }
 
@@ -476,14 +489,14 @@ function setupBotLogic() {
             const quantity = parseInt(text);
             
             if (isNaN(quantity) || quantity <= 0) {
-                bot.sendMessage(chatId, '❌ Số lượng không hợp lệ. Vui lòng chỉ nhập số dương (VD: 1000).');
+                bot.sendMessage(chatId, '❌ Số lượng không hợp lệ. Vui lòng chỉ nhập số dương (VD: 1000).').catch(() => {});
                 return;
             }
 
             const totalCost = quantity * u.actionState.price;
 
-            if (u.balance < totalCost) {
-                bot.sendMessage(chatId, `❌ Tài khoản của bạn không đủ!\n💰 Số dư: \`${u.balance.toLocaleString()} VNĐ\`\n📉 Yêu cầu: \`${totalCost.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' });
+            if ((u.balance || 0) < totalCost) {
+                bot.sendMessage(chatId, `❌ Tài khoản của bạn không đủ!\n💰 Số dư: \`${(u.balance || 0).toLocaleString()} VNĐ\`\n📉 Yêu cầu: \`${totalCost.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' }).catch(() => {});
                 delete u.actionState; 
                 saveDatabase();
                 return;
@@ -514,7 +527,6 @@ function setupBotLogic() {
             delete u.actionState; 
             saveDatabase();
 
-            // Tự động đẩy đơn mới vào hàng chờ AI Engine để chạy tự động
             aiEngine.enqueueOrder(newOrder);
 
             bot.sendMessage(
@@ -528,14 +540,14 @@ function setupBotLogic() {
                 `💰 Số dư còn lại: \`${u.balance.toLocaleString()} VNĐ\`\n\n` +
                 `✨ Trạng thái: *🤖 AI Đang tiếp nhận & xử lý tự động...*`,
                 { parse_mode: 'Markdown' }
-            );
+            ).catch(() => {});
 
             try {
                 bot.sendMessage(
                     ADMIN_ID, 
                     `🔔 *ĐƠN SMM MỚI TẠO*\n👤 Khách: ${u.name} (ID: \`${chatId}\`)\n🏷️ Mã Đơn: ${newOrderId}\n📌 Dịch vụ: ${orderDetail.serviceName}\n🔗 Link: ${orderDetail.link}\n📊 SL: ${quantity}\n💵 Tổng thu: ${totalCost.toLocaleString()} VNĐ`, 
                     { parse_mode: 'Markdown' }
-                );
+                ).catch(() => {});
             } catch (e) {}
         }
     });
@@ -553,7 +565,7 @@ function setupBotLogic() {
                 kb.push([{ text: SMM_SERVICES[key].title, callback_data: `smm_cat_${key}` }]);
             });
             kb.push([{ text: '◀ Quay lại Trang chủ', callback_data: 'back_start' }]);
-            bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
+            bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }).catch(() => {});
         }
         else if (data.startsWith('smm_cat_')) {
             const catKey = data.replace('smm_cat_', '');
@@ -566,7 +578,7 @@ function setupBotLogic() {
                     kb.push([{ text: `🛒 Đặt hàng: ${item.name}`, callback_data: `order_${catKey}_${idx}` }]);
                 });
                 kb.push([{ text: '◀ Quay lại Danh mục', callback_data: 'smm_main' }]);
-                bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
+                bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }).catch(() => {});
             }
         }
         else if (data.startsWith('order_')) {
@@ -582,7 +594,7 @@ function setupBotLogic() {
                     price: item.price
                 };
                 saveDatabase();
-                bot.sendMessage(chatId, `📌 Bạn đang đặt: *${item.name}*\n💰 Đơn giá: \`${item.price.toLocaleString()} VNĐ / 1 lượt\`\n\n👉 *Vui lòng dán Link / ID mục tiêu vào đây:*\n\n_(Gõ /cancel nếu bạn muốn hủy)_`, { parse_mode: 'Markdown' });
+                bot.sendMessage(chatId, `📌 Bạn đang đặt: *${item.name}*\n💰 Đơn giá: \`${item.price.toLocaleString()} VNĐ / 1 lượt\`\n\n👉 *Vui lòng dán Link / ID mục tiêu vào đây:*\n\n_(Gõ /cancel nếu bạn muốn hủy)_`, { parse_mode: 'Markdown' }).catch(() => {});
             }
         }
         else if (data === 'deposit') {
@@ -594,12 +606,12 @@ function setupBotLogic() {
             `⚠️ *Lưu ý:* Vui lòng ghi đúng nội dung để hệ thống cộng tiền tự động trong 3 giây.`;
             
             let kb = [[{ text: '◀ Quay lại Trang chủ', callback_data: 'back_start' }]];
-            bot.editMessageText(depositMsg, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
+            bot.editMessageText(depositMsg, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }).catch(() => {});
         }
         else if (data === 'customer_center') {
             if (!u.orders) u.orders = [];
             
-            let text = `📇 *TRUNG TÂM KHÁCH HÀNG*\n👤 Xin chào sếp: *${u.name}*\n💰 Số dư ví: \`${u.balance.toLocaleString()} VNĐ\`\n--------------------------------------------------\n`;
+            let text = `📇 *TRUNG TÂM KHÁCH HÀNG*\n👤 Xin chào sếp: *${u.name}*\n💰 Số dư ví: \`${(u.balance || 0).toLocaleString()} VNĐ\`\n--------------------------------------------------\n`;
             text += `📦 *DANH SÁCH ĐƠN HÀNG:*\n\n`;
 
             const userOrders = u.orders.slice().reverse().slice(0, 15);
@@ -611,7 +623,7 @@ function setupBotLogic() {
                     text += `🏷️ *Mã đơn:* \`${o.id}\`\n`;
                     text += `📌 *Dịch vụ:* ${o.serviceName || o.service}\n`;
                     text += `🔗 *Link:* ${o.link}\n`;
-                    text += `📊 *SL:* ${o.quantity.toLocaleString()} | 💸 \`${(o.totalCost || 0).toLocaleString()} VNĐ\`\n`;
+                    text += `📊 *SL:* ${(o.quantity || 0).toLocaleString()} | 💸 \`${(o.totalCost || 0).toLocaleString()} VNĐ\`\n`;
                     text += `⏰ *Lúc:* ${o.date || 'N/A'}\n`;
                     text += `🔄 *Trạng thái:* ${o.status}\n`;
                     text += `—\n`;
@@ -619,11 +631,11 @@ function setupBotLogic() {
             }
 
             let kb = [[{ text: '◀ Quay lại Trang chủ', callback_data: 'back_start' }]];
-            bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
+            bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }).catch(() => {});
         }
         else if (data === 'admin_center') {
             if (chatId !== ADMIN_ID) {
-                bot.answerCallbackQuery(query.id, { text: '❌ Bạn không có quyền truy cập!', show_alert: true });
+                bot.answerCallbackQuery(query.id, { text: '❌ Bạn không có quyền truy cập!', show_alert: true }).catch(() => {});
                 return;
             }
 
@@ -648,7 +660,7 @@ function setupBotLogic() {
             });
 
             kb.push([{ text: '🔄 Làm mới', callback_data: 'admin_center' }, { text: '◀ Quay lại Trang chủ', callback_data: 'back_start' }]);
-            bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
+            bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }).catch(() => {});
         }
         else if (data.startsWith('admin_user_')) {
             if (chatId !== ADMIN_ID) return;
@@ -656,7 +668,7 @@ function setupBotLogic() {
             const targetUser = users[targetId];
 
             if (!targetUser) {
-                bot.answerCallbackQuery(query.id, { text: '❌ Khách hàng không tồn tại!', show_alert: true });
+                bot.answerCallbackQuery(query.id, { text: '❌ Khách hàng không tồn tại!', show_alert: true }).catch(() => {});
                 return;
             }
 
@@ -670,21 +682,21 @@ function setupBotLogic() {
                 [{ text: '➕ Cộng / Nạp tiền', callback_data: `admin_add_${targetId}` }, { text: '➖ Trừ tiền', callback_data: `admin_sub_${targetId}` }],
                 [{ text: '◀ Quay lại danh sách Admin', callback_data: 'admin_center' }]
             ];
-            bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
+            bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }).catch(() => {});
         }
         else if (data.startsWith('admin_add_')) {
             if (chatId !== ADMIN_ID) return;
             const targetId = data.replace('admin_add_', '');
             const targetUser = users[targetId];
             adminSession[chatId] = { action: 'ADD', targetId: targetId };
-            bot.sendMessage(chatId, `➕ *CỘNG TIỀN CHO KHÁCH*\n👤 Khách: *${targetUser.name}*\n\n👉 *Nhập số tiền muốn cộng:* (VD: 50000)\n_(Gõ /cancel để hủy)_`, { parse_mode: 'Markdown' });
+            bot.sendMessage(chatId, `➕ *CỘNG TIỀN CHO KHÁCH*\n👤 Khách: *${targetUser?.name || targetId}*\n\n👉 *Nhập số tiền muốn cộng:* (VD: 50000)\n_(Gõ /cancel để hủy)_`, { parse_mode: 'Markdown' }).catch(() => {});
         }
         else if (data.startsWith('admin_sub_')) {
             if (chatId !== ADMIN_ID) return;
             const targetId = data.replace('admin_sub_', '');
             const targetUser = users[targetId];
             adminSession[chatId] = { action: 'SUB', targetId: targetId };
-            bot.sendMessage(chatId, `➖ *TRỪ TIỀN KHÁCH HÀNG*\n👤 Khách: *${targetUser.name}*\n\n👉 *Nhập số tiền muốn trừ:* (VD: 20000)\n_(Gõ /cancel để hủy)_`, { parse_mode: 'Markdown' });
+            bot.sendMessage(chatId, `➖ *TRỪ TIỀN KHÁCH HÀNG*\n👤 Khách: *${targetUser?.name || targetId}*\n\n👉 *Nhập số tiền muốn trừ:* (VD: 20000)\n_(Gõ /cancel để hủy)_`, { parse_mode: 'Markdown' }).catch(() => {});
         }
         else if (data === 'buy_code') {
             let textMenu = `🎟️ *TRUNG TÂM MUA CODE & NHÀ CÁI*\n☕ Chào sếp *${u.name}*\n--------------------------------------------------\n`;
@@ -695,7 +707,7 @@ function setupBotLogic() {
                 kb.push([{ text: `▶ ${brand} (${count})`, callback_data: `page_${brand}` }]);
             });
             kb.push([{ text: '◀ Quay lại', callback_data: 'back_start' }]);
-            bot.editMessageText(textMenu, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
+            bot.editMessageText(textMenu, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }).catch(() => {});
         }
         else if (data === 'back_start') {
             if (u.actionState) delete u.actionState;
@@ -704,22 +716,29 @@ function setupBotLogic() {
             sendHomeMenu(chatId, u, (chatId === ADMIN_ID));
         }
 
-        bot.answerCallbackQuery(query.id);
+        bot.answerCallbackQuery(query.id).catch(() => {});
     });
 }
 
 function startBot(token) {
+    if (!token) {
+        console.warn('⚠️ BOT_TOKEN trống, bỏ qua khởi động Telegram Bot.');
+        return false;
+    }
     if (bot) {
         try { bot.stopPolling(); } catch (e) {}
         bot = null;
     }
     try {
         bot = new TelegramBot(token, { polling: true });
+        bot.on('polling_error', (error) => {
+            console.error(`[BOT ERROR] Polling error: ${error.code} - ${error.message}`);
+        });
         setupBotLogic();
         console.log('🤖 Bot Telegram đã khởi động thành công!');
         return true;
     } catch (e) {
-        console.error("❌ Lỗi khởi động bot:", e);
+        console.error("❌ Lỗi khởi động bot:", e.message);
         return false;
     }
 }
@@ -734,7 +753,6 @@ wss.on('connection', (ws) => {
     let totalBalance = 0;
     Object.values(users).forEach(u => { totalBalance += (u.balance || 0); });
 
-    // Gửi thông tin Snapshot ban đầu khi Dashboard vừa load
     ws.send(JSON.stringify({
         type: 'INIT_DATA',
         totalUsers: totalUsers,
