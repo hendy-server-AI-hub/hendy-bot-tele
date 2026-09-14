@@ -1,14 +1,14 @@
 {
-  "name": "hendy-bot-tele",
-  "version": "1.0.0",
-  "description": "Telegram SMM Bot & Web Dashboard",
+  "name": "hendy-hades-v6100-system",
+  "version": "6.1.00",
+  "description": "Master Control Panel - Hendy & Hades V6100 System",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "node-telegram-bot-api": "^0.65.1",
-    "ws": "^8.16.0"
+    "express": "^4.18.2",
+    "node-telegram-bot-api": "^0.61.0",
+    "ws": "^8.13.0"
   }
 }
