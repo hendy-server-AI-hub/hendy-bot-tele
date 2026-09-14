@@ -26,6 +26,34 @@ const DEFAULT_LINKED_ACCOUNTS = {
     "78WIN": []
 };
 
+// Cấu hình danh mục Dịch Vụ Mạng Xã Hội
+const SMM_SERVICES = {
+    cm: {
+        title: '🎰 Spin Coin Master',
+        items: ['Spin Coin Master', 'Spin Coin Master (Extra)', 'Sự Kiện Mời Đối Tác']
+    },
+    fb: {
+        title: '👍 Dịch Vụ Facebook',
+        items: ['Tăng Like Facebook', 'Tăng Follow Facebook', 'Tăng Lượt Xem Story', 'Tăng Share Bài Viết', 'Tăng Like/Follow FanPage', 'Tăng View Live Stream', 'Tăng Member Group', 'Tăng Bình Luận FB']
+    },
+    tt: {
+        title: '🎵 Dịch Vụ TikTok',
+        items: ['Tăng Tim TikTok', 'Tăng Follow TikTok', 'Tăng View TikTok', 'Tăng Share TikTok', 'Tăng Save TikTok', 'Tăng Bình Luận TikTok', 'Tăng Mắt Live TikTok']
+    },
+    ins: {
+        title: '📸 Dịch Vụ Instagram',
+        items: ['Tăng Tim Bài Viết INS', 'Tăng Theo Dõi Instagram']
+    },
+    yt: {
+        title: '▶️ Dịch Vụ YouTube',
+        items: ['Tăng Subscribe YouTube', 'Tăng View YouTube', 'Tăng Like YouTube']
+    },
+    tele: {
+        title: '✈️ Dịch Vụ Telegram',
+        items: ['Tăng Member Group/Channel', 'Tăng View Bài Viết Telegram', 'Tăng Reaction Telegram']
+    }
+};
+
 let brandStatuses = {
     'SC88': { status: '🟢 Hoạt động', ping: 12 },
     'C168': { status: '🟢 Hoạt động', ping: 15 },
@@ -93,6 +121,7 @@ Chào mừng sếp, *${u.name}*
 
     const inlineKeyboard = [
         [{ text: '🎟️ TRUNG TÂM MUA CODE', callback_data: 'buy_code' }],
+        [{ text: '🌐 DỊCH VỤ MẠNG XÃ HỘI', callback_data: 'smm_main' }],
         [{ text: '💳 NẠP TIỀN TỰ ĐỘNG', callback_data: 'deposit' }, { text: '📇 TRUNG TÂM KHÁCH HÀNG', callback_data: 'customer_center' }],
         [{ text: '👥 NHÓM HỖ TRỢ', url: 'https://t.me/Hendy_Support_Group' }]
     ];
@@ -125,9 +154,11 @@ function setupBotLogic() {
     bot.on('callback_query', (query) => {
         const chatId = query.from.id.toString();
         const data = query.data;
+        const messageId = query.message.message_id;
         const u = users[chatId];
         if (!u) return;
 
+        // Menu Mua Code Game
         if (data === 'buy_code') {
             let textMenu = `🎟️ *TRUNG TÂM MUA CODE & NHÀ CÁI*\n☕ Chào sếp *${u.name}*\n--------------------------------------------------\n`;
             let kb = [];
@@ -137,8 +168,49 @@ function setupBotLogic() {
                 kb.push([{ text: `▶ ${brand} (${count})`, callback_data: `page_${brand}` }]);
             });
             kb.push([{ text: '◀ Quay lại', callback_data: 'back_start' }]);
-            bot.editMessageText(textMenu, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
+            bot.editMessageText(textMenu, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
         }
+        // Menu Dịch Vụ Mạng Xã Hội (SMM Main Menu)
+        else if (data === 'smm_main') {
+            let textMenu = `🌐 *DANH MỤC DỊCH VỤ MẠNG XÃ HỘI*\n--------------------------------------------------\nVui lòng chọn nền tảng dịch vụ sếp muốn sử dụng:`;
+            let kb = [
+                [{ text: '🎰 Spin Coin Master', callback_data: 'smm_cat_cm' }, { text: '👍 Dịch Vụ Facebook', callback_data: 'smm_cat_fb' }],
+                [{ text: '🎵 Dịch Vụ TikTok', callback_data: 'smm_cat_tt' }, { text: '📸 Dịch Vụ Instagram', callback_data: 'smm_cat_ins' }],
+                [{ text: '▶️ Dịch Vụ YouTube', callback_data: 'smm_cat_yt' }, { text: '✈️ Dịch Vụ Telegram', callback_data: 'smm_cat_tele' }],
+                [{ text: '◀ Quay lại Trang Chủ', callback_data: 'back_start' }]
+            ];
+            bot.editMessageText(textMenu, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
+        }
+        // Xem chi tiết từng nền tảng SMM
+        else if (data.startsWith('smm_cat_')) {
+            const catKey = data.replace('smm_cat_', '');
+            const category = SMM_SERVICES[catKey];
+
+            if (category) {
+                let textMenu = `🚀 *${category.title.toUpperCase()}*\n--------------------------------------------------\nChọn dịch vụ sếp cần chạy đơn:`;
+                let kb = [];
+                category.items.forEach((item, index) => {
+                    kb.push([{ text: `⚡ ${item}`, callback_data: `smm_item_${catKey}_${index}` }]);
+                });
+                kb.push([{ text: '◀ Quay lại Danh Mục SMM', callback_data: 'smm_main' }]);
+                bot.editMessageText(textMenu, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
+            }
+        }
+        // Xử lý khi chọn 1 dịch vụ cụ thể
+        else if (data.startsWith('smm_item_')) {
+            const parts = data.split('_');
+            const catKey = parts[2];
+            const itemIdx = parseInt(parts[3]);
+            const category = SMM_SERVICES[catKey];
+
+            if (category && category.items[itemIdx]) {
+                const serviceName = category.items[itemIdx];
+                let textDetail = `📌 *DỊCH VỤ:* ${serviceName}\n💰 *Số dư hiện tại:* \`${u.balance.toLocaleString()} VNĐ\`\n--------------------------------------------------\n👉 Để tạo đơn hàng, sếp vui lòng gửi Link bài viết/tài khoản và Số lượng theo cú pháp:\n\`Link_Hoac_ID | So_Luong\``;
+                let kb = [[{ text: '◀ Quay lại', callback_data: `smm_cat_${catKey}` }]];
+                bot.editMessageText(textDetail, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
+            }
+        }
+        // Quay lại Menu chính
         else if (data === 'back_start') {
             sendHomeMenu(chatId, u, (chatId === ADMIN_ID));
         }
