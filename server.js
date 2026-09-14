@@ -1,18 +1,27 @@
+const express = require('express');
+const http = require('http');
+const path = require('path');
 const TelegramBotModule = require('node-telegram-bot-api');
 const TelegramBot = TelegramBotModule.default || TelegramBotModule;
 const WebSocket = require('ws');
 const fs = require('fs');
-const path = require('path');
 
-const WS_PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 8080;
 const currentToken = process.env.BOT_TOKEN || '8689114890:AAFBFM0rNtZWpOtAovIPHPVQTJVp0odU1DQ';
 const ADMIN_ID = process.env.ADMIN_ID || '6138197737';
-const CHANNEL_ID = process.env.CHANNEL_ID || '-100xxxxxxxxx';
+
+const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
+// Cấu hình Express phục vụ giao diện Web Panel
+app.use(express.static(__dirname));
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 const DB_FILE = path.join(__dirname, 'database.json');
 let users = {};
-let adminSession = {}; 
-let masterWebSocket = null;
 let bot = null;
 
 const DEFAULT_LINKED_ACCOUNTS = {
@@ -27,12 +36,6 @@ const SMM_SERVICES = {
             { name: 'Tăng Follow Tiktok', price: 120 }
         ]
     }
-};
-
-let brandStatuses = {
-    'SC88': { status: '🟢 Hoạt động', ping: 12 },
-    'C168': { status: '🟢 Hoạt động', ping: 15 },
-    'F8BET': { status: '🟢 Hoạt động', ping: 14 }
 };
 
 function loadDatabase() {
@@ -125,7 +128,7 @@ function setupBotLogic() {
             delete u.actionState;
             saveDatabase();
 
-            bot.sendMessage(chatId, `✅ ĐẶT HÀNG THÀNH CÔNG!\nMã đơn: ${newOrderId}\nTài khoản tự tạo: \`${autoAccountInfo}\``, { parse_mode: 'Markdown' });
+            bot.sendMessage(chatId, `✅ ĐẶT HÀNG THÀNH CÔNG & KHỞI TẠO TÀI KHOẢN!\nMã đơn: ${newOrderId}\n🔑 *Tài khoản tự tạo:* \`${autoAccountInfo}\``, { parse_mode: 'Markdown' });
         }
     });
 
@@ -155,6 +158,8 @@ function startBot(token) {
     setupBotLogic();
 }
 
-const wss = new WebSocket.Server({ port: WS_PORT });
-loadDatabase();
-startBot(currentToken);
+server.listen(PORT, () => {
+    loadDatabase();
+    startBot(currentToken);
+    console.log(`🚀 Server và Dashboard đang chạy tại cổng ${PORT}`);
+});
