@@ -1,16 +1,14 @@
 {
   "name": "hendy-bot-tele",
   "version": "1.0.0",
-  "description": "Telegram Bot and WebSocket Server",
+  "description": "Telegram SMM Bot & Web Dashboard",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "node-telegram-bot-api": "^0.66.0",
-    "ws": "^8.18.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "express": "^4.19.2",
+    "node-telegram-bot-api": "^0.65.1",
+    "ws": "^8.16.0"
   }
 }
