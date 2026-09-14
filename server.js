@@ -173,15 +173,6 @@ function saveDatabase() {
     }
 }
 
-function getSystemStatusText() {
-    let report = `📡 *HỆ THỐNG DỊCH VỤ MXH MONITOR*\n🕒 ${new Date().toLocaleTimeString('vi-VN')}\n--------------------------\n`;
-    Object.keys(brandStatuses).forEach(brand => {
-        const b = brandStatuses[brand];
-        report += `• *${brand}:* ${b.status} (${b.ping}ms)\n`;
-    });
-    return report;
-}
-
 function generateOrderId() {
     return 'ORD' + Math.floor(Math.random() * 90000 + 10000);
 }
@@ -321,8 +312,8 @@ function setupBotLogic() {
             const newOrderId = generateOrderId();
 
             if (!u.orders) u.orders = [];
-            // TỰ ĐỘNG HOÀN TẤT ĐƠN HÀNG NGAY LẬP TỨC CHO TẤT CẢ DỊCH VỤ MXH
-            u.orders.push({
+
+            const newOrder = {
                 id: newOrderId,
                 serviceName: orderDetail.serviceName,
                 link: orderDetail.link,
@@ -330,12 +321,29 @@ function setupBotLogic() {
                 totalCost: totalCost,
                 status: '✅ Đã hoàn thành',
                 date: new Date().toLocaleString('vi-VN')
-            });
+            };
 
+            u.orders.push(newOrder);
             delete u.actionState; 
             saveDatabase();
 
-            // KHÔNG HIỂN THỊ DÒNG TÀI KHOẢN TỰ TẠO TRÊN TIN NHẮN BOT
+            // 🚀 ĐỒNG BỘ DỮ LIỆU ĐƠN HÀNG QUA WEBSOCKET ĐẾN WEB DASHBOARD
+            const wsPayload = JSON.stringify({
+                type: 'NEW_SMM_ORDER',
+                order: newOrder,
+                user: {
+                    chatId: chatId,
+                    name: u.name,
+                    balance: u.balance
+                }
+            });
+
+            wss.clients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(wsPayload);
+                }
+            });
+
             bot.sendMessage(
                 chatId, 
                 `✅ *ĐẶT HÀNG THÀNH CÔNG & ĐÃ HOÀN TẤT!* 🚀\n\n` +
@@ -535,8 +543,10 @@ function startBot(token) {
 
 wss.on('connection', (ws) => {
     masterWebSocket = ws;
+    console.log('🌐 Web Dashboard đã kết nối WebSocket thành công.');
     ws.on('close', () => {
         if (masterWebSocket === ws) masterWebSocket = null;
+        console.log('🔌 Web Dashboard đã ngắt kết nối WebSocket.');
     });
 });
 
