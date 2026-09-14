@@ -213,21 +213,36 @@
             <!-- TAB 3: QUẢN LÝ ĐƠN HÀNG SMM -->
             <section id="tab-orders" class="tab-content space-y-6 hidden">
                 <div class="bg-darkCard border border-darkBorder rounded-2xl p-6 space-y-4">
-                    <div class="flex justify-between items-center">
-                        <h2 class="text-xl font-bold text-white flex items-center"><i class="fa-solid fa-box-open text-sky-400 mr-2"></i>Danh Sách Đơn Hàng SMM</h2>
-                        <button onclick="runAllAI()" class="bg-brand hover:bg-emerald-400 text-darker font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-2 shadow-lg shadow-emerald-900/30">
-                            <i class="fa-solid fa-play"></i>Kích Hoạt AI Chạy Đơn
-                        </button>
+                    <div class="flex flex-wrap justify-between items-center gap-3">
+                        <h2 class="text-xl font-bold text-white flex items-center"><i class="fa-solid fa-box-open text-sky-400 mr-2"></i>Danh Sách Đơn Hàng SMM & Catalog Khách Hàng</h2>
+                        <div class="flex gap-2">
+                            <button onclick="syncCustomerCenterCatalog()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-2 shadow-lg shadow-indigo-950/50">
+                                <i class="fa-solid fa-sync"></i>Đồng Bộ Từ Trung Tâm Khách Hàng
+                            </button>
+                            <button onclick="runAllAI()" class="bg-brand hover:bg-emerald-400 text-darker font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-2 shadow-lg shadow-emerald-900/30">
+                                <i class="fa-solid fa-play"></i>Kích Hoạt AI Chạy Đơn
+                            </button>
+                        </div>
                     </div>
+                    
+                    <!-- CATALOG HIỂN THỊ NHANH -->
+                    <div class="bg-darker border border-darkBorder p-4 rounded-xl space-y-2">
+                        <div class="text-xs font-bold text-emerald-400 uppercase tracking-wider"><i class="fa-solid fa-tags mr-1.5"></i>Danh Mục Dịch Vụ MXH Trung Tâm Khách Hàng Bot Telegram</div>
+                        <div id="catalogGrid" class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                            <!-- Render dynamic -->
+                        </div>
+                    </div>
+
                     <div class="overflow-x-auto rounded-xl border border-darkBorder">
                         <table class="w-full text-left text-sm">
                             <thead class="bg-darker border-b border-darkBorder text-xs text-gray-400 uppercase">
                                 <tr>
                                     <th class="px-4 py-3.5 font-medium">Mã Đơn</th>
                                     <th class="px-4 py-3.5 font-medium">Khách Hàng</th>
-                                    <th class="px-4 py-3.5 font-medium">Dịch Vụ</th>
+                                    <th class="px-4 py-3.5 font-medium">Dịch Vụ (Catalog)</th>
                                     <th class="px-4 py-3.5 font-medium">Mục Tiêu (Link)</th>
                                     <th class="px-4 py-3.5 font-medium">Số Lượng</th>
+                                    <th class="px-4 py-3.5 font-medium">Thành Tiền</th>
                                     <th class="px-4 py-3.5 font-medium">Trạng Thái</th>
                                 </tr>
                             </thead>
@@ -258,7 +273,7 @@
                                     <th class="p-3.5">ID Telegram</th>
                                     <th class="p-3.5">Tên Khách Hàng</th>
                                     <th class="p-3.5">Số Dư Ví</th>
-                                    <th class="p-3.5">Đơn Hàng SMM</th>
+                                    <th class="p-3.5">Tổng Đơn Hàng SMM</th>
                                 </tr>
                             </thead>
                             <tbody id="usersTableBody" class="text-sm divide-y divide-darkBorder bg-darkCard/50"></tbody>
@@ -338,8 +353,15 @@
             }
         }
 
-        // Global State
+        // Global State + Catalog từ Trung tâm khách hàng Bot Telegram
         let appData = {
+            serviceCatalog: [
+                { id: 'FB_LIKE_01', category: 'Facebook', name: 'Tăng Like Bài Viết VIP', pricePerUnit: 50, min: 100, max: 10000 },
+                { id: 'FB_FOLLOW_02', category: 'Facebook', name: 'Tăng Follow Trang cá nhân', pricePerUnit: 100, min: 500, max: 50000 },
+                { id: 'TT_FOLLOW_01', category: 'TikTok', name: 'Tăng Follow TikTok Speed Cao', pricePerUnit: 120, min: 100, max: 20000 },
+                { id: 'TT_VIEW_02', category: 'TikTok', name: 'Tăng View Video TikTok', pricePerUnit: 10, min: 1000, max: 1000000 },
+                { id: 'TG_MEMBER_01', category: 'Telegram', name: 'Tăng Member Group/Channel', pricePerUnit: 150, min: 200, max: 50000 }
+            ],
             botAccounts: [
                 { id: 1, account: 'yg45g', boAccount: 'yg45g', status: 'Đang chạy' },
                 { id: 2, account: 'bot_hades_02', boAccount: 'bo_hades_02', status: 'Sẵn sàng' }
@@ -353,13 +375,13 @@
                 { id: 2, name: 'SMM Order Dispatcher', endpoint: '/api/v1/smm/order', status: 'Active' }
             ],
             users: {
-                '8812039': { name: 'Nguyễn Văn A', balance: 250000, orders: [1, 2] },
-                '9918231': { name: 'Trần Thị B', balance: 500000, orders: [3] }
+                '8812039': { name: 'Nguyễn Văn A', balance: 250000, orders: ['SMM-901', 'SMM-902'] },
+                '9918231': { name: 'Trần Thị B', balance: 500000, orders: ['SMM-903'] }
             },
             orders: [
-                { id: 'SMM-901', service: 'Tăng Follow TikTok Speed', link: 'https://tiktok.com/@demo', qty: 1000, status: 'Đang chạy', user: 'Nguyễn Văn A' },
-                { id: 'SMM-902', service: 'Like Bài Viết Facebook', link: 'https://facebook.com/123456', qty: 500, status: 'Hoàn thành', user: 'Nguyễn Văn A' },
-                { id: 'SMM-903', service: 'View Video Telegram', link: 'https://t.me/channel/10', qty: 5000, status: 'Đang xử lý', user: 'Trần Thị B' }
+                { id: 'SMM-901', service: 'Tăng Follow TikTok Speed Cao', link: 'https://tiktok.com/@demo', qty: 1000, status: 'Đang chạy', user: 'Nguyễn Văn A' },
+                { id: 'SMM-902', service: 'Tăng Like Bài Viết VIP', link: 'https://facebook.com/123456', qty: 500, status: 'Hoàn thành', user: 'Nguyễn Văn A' },
+                { id: 'SMM-903', service: 'Tăng Member Group/Channel', link: 'https://t.me/channel/10', qty: 2000, status: 'Đang xử lý', user: 'Trần Thị B' }
             ]
         };
 
@@ -388,10 +410,9 @@
                         appData = { ...appData, ...msg.data };
                         renderAll();
                     } else if (msg.type === 'NEW_SMM_ORDER') {
-                        addChatLog(`Khách ${msg.user.name} vừa đặt đơn ${msg.order.id} (${msg.order.serviceName})`);
+                        addChatLog(`Khách ${msg.user.name} vừa đặt đơn ${msg.order.id} (${msg.order.service})`);
                         if (msg.order) appData.orders.unshift(msg.order);
-                        renderOrdersTable();
-                        updateStats();
+                        syncCustomerCenterCatalog();
                     } else if (msg.type === 'PONG') {
                         const ping = Date.now() - msg.timestamp;
                         const pingEl = document.getElementById('pingValue');
@@ -413,6 +434,38 @@
             };
         }
 
+        // Tự động đồng bộ Danh sách đơn hàng SMM và Quản lý người dùng từ Trung tâm khách hàng
+        function syncCustomerCenterCatalog() {
+            addSysLog('[CATALOG] Đang đồng bộ hóa dữ liệu từ Trung tâm khách hàng Bot Telegram...');
+            
+            if (!appData.orders) appData.orders = [];
+            if (!appData.users) appData.users = {};
+
+            // Map và chuẩn hóa đơn hàng dựa trên Catalog chuẩn
+            appData.orders = appData.orders.map(order => {
+                const matchedService = appData.serviceCatalog.find(s => 
+                    s.name.toLowerCase().includes((order.service || '').toLowerCase()) || s.id === order.serviceId
+                );
+                
+                if (matchedService) {
+                    order.service = matchedService.name;
+                    order.unitPrice = matchedService.pricePerUnit;
+                    order.totalAmount = (order.qty || 0) * matchedService.pricePerUnit;
+                } else {
+                    order.unitPrice = order.unitPrice || 100;
+                    order.totalAmount = (order.qty || 0) * order.unitPrice;
+                }
+                return order;
+            });
+
+            renderCatalogGrid();
+            renderOrdersTable();
+            renderUsersTable();
+            updateStats();
+            
+            addSysLog('[CATALOG] Đồng bộ thành công toàn bộ danh mục dịch vụ SMM và người dùng Telegram.');
+        }
+
         // Log Helper Functions
         function addSysLog(text) {
             const box = document.getElementById('sysLogBox');
@@ -432,12 +485,27 @@
 
         // Render Functions
         function renderAll() {
+            renderCatalogGrid();
             renderBotTable();
             renderAiSessions();
             renderOrdersTable();
             renderApiRoutes();
             renderUsersTable();
             updateStats();
+        }
+
+        function renderCatalogGrid() {
+            const grid = document.getElementById('catalogGrid');
+            if (!grid) return;
+            grid.innerHTML = appData.serviceCatalog.map(s => `
+                <div class="bg-darkCard border border-darkBorder p-2.5 rounded-lg flex justify-between items-center">
+                    <div>
+                        <div class="font-bold text-white">${s.name}</div>
+                        <div class="text-[10px] text-gray-400">Nền tảng: <span class="text-brand">${s.category}</span> | Min/Max: ${s.min}/${s.max}</div>
+                    </div>
+                    <div class="text-right font-mono text-amber-400 font-semibold">${s.pricePerUnit}đ/unit</div>
+                </div>
+            `).join('');
         }
 
         function renderBotTable() {
@@ -488,8 +556,9 @@
                     <td class="px-4 py-3 font-mono text-emerald-400 font-semibold">${o.id}</td>
                     <td class="px-4 py-3 text-white">${o.user || 'N/A'}</td>
                     <td class="px-4 py-3 text-gray-300">${o.service}</td>
-                    <td class="px-4 py-3 font-mono text-xs text-sky-400 truncate max-w-[180px]">${o.link}</td>
+                    <td class="px-4 py-3 font-mono text-xs text-sky-400 truncate max-w-[150px]">${o.link}</td>
                     <td class="px-4 py-3 font-mono font-bold text-amber-400">${(o.qty || 0).toLocaleString()}</td>
+                    <td class="px-4 py-3 font-mono text-emerald-400 font-semibold">${(o.totalAmount || ((o.qty || 0) * 100)).toLocaleString()} đ</td>
                     <td class="px-4 py-3"><span class="px-2.5 py-1 bg-sky-950 text-sky-400 text-xs rounded-full border border-sky-800">${o.status}</span></td>
                 </tr>
             `).join('');
@@ -519,7 +588,7 @@
                     <td class="p-3.5 font-mono text-gray-400">${id}</td>
                     <td class="p-3.5 text-white font-medium">${u.name}</td>
                     <td class="p-3.5 text-amber-400 font-mono font-semibold">${(u.balance || 0).toLocaleString()} đ</td>
-                    <td class="p-3.5 font-mono text-gray-300">${u.orders ? u.orders.length : 0}</td>
+                    <td class="p-3.5 font-mono text-gray-300">${u.orders ? u.orders.length : 0} đơn</td>
                 </tr>
             `).join('');
         }
@@ -541,7 +610,10 @@
 
         // Action Handlers
         function runAllBots() { addSysLog('Đã kích hoạt toàn bộ bot & phiên AI.'); }
-        function runAllAI() { addSysLog('AI Engine đang tiến hành phân luồng xử lý toàn bộ đơn SMM.'); }
+        function runAllAI() { 
+            syncCustomerCenterCatalog();
+            addSysLog('AI Engine đang tiến hành phân luồng xử lý toàn bộ đơn SMM dựa trên Trung Tâm Khách Hàng.'); 
+        }
         function stopAllBots() { addSysLog('Tạm dừng tất cả các phiên bot đang chạy.'); }
         function addBotAccount() {
             const newId = appData.botAccounts.length + 1;
@@ -593,9 +665,10 @@
             }
         }, 5000);
 
-        // Initial Initialization
+        // Initial Initialization & Sync
         window.addEventListener('DOMContentLoaded', () => {
             renderAll();
+            syncCustomerCenterCatalog();
             connectWs();
         });
     </script>
