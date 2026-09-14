@@ -84,7 +84,7 @@
                 <div class="bg-darkCard border border-darkBorder rounded-2xl p-6 space-y-4">
                     <h2 class="text-lg font-bold text-white"><i class="fa-solid fa-server text-emerald-400 mr-2"></i>Trạng Thái Gateway & Thương Hiệu</h2>
                     <div id="brandStatusGrid" class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <!-- Dynamic rendered -->
+                        <!-- Rendered dynamically -->
                     </div>
                 </div>
             </section>
@@ -141,7 +141,7 @@
                                 </tr>
                             </thead>
                             <tbody id="ordersTableBody" class="text-sm divide-y divide-darkBorder">
-                                <!-- Dynamic rendered -->
+                                <!-- Rendered dynamically -->
                             </tbody>
                         </table>
                     </div>
@@ -194,7 +194,6 @@
         }
 
         let globalOrders = [];
-        let globalUsers = {};
         const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
         let ws;
 
@@ -211,7 +210,16 @@
             ws.onmessage = (event) => {
                 try {
                     const msg = JSON.parse(event.data);
-                    if (msg.type === 'NEW_SMM_ORDER') {
+                    if (msg.type === 'INIT_DATA') {
+                        // 🚀 Đồng bộ dữ liệu ban đầu từ server
+                        document.getElementById('statUsers').innerText = msg.totalUsers;
+                        document.getElementById('statBalance').innerText = msg.totalBalance.toLocaleString() + ' đ';
+                        globalOrders = msg.orders || [];
+                        renderOrders();
+                        updateDashboardStats();
+                        renderBrandStatuses(msg.brandStatuses);
+                        addSysLog(`Đã tải đồng bộ ${msg.totalUsers} khách hàng và ${globalOrders.length} đơn hàng.`);
+                    } else if (msg.type === 'NEW_SMM_ORDER') {
                         globalOrders.unshift(msg.order);
                         addChatLog(`Khách ${msg.user.name} đặt đơn ${msg.order.id} (${msg.order.serviceName})`);
                         renderOrders();
@@ -230,29 +238,44 @@
             };
         }
 
+        function renderBrandStatuses(statuses) {
+            const grid = document.getElementById('brandStatusGrid');
+            if (!statuses || !grid) return;
+            grid.innerHTML = Object.keys(statuses).map(brand => `
+                <div class="bg-darker border border-darkBorder p-4 rounded-xl flex justify-between items-center">
+                    <span class="font-bold text-white">${brand}</span>
+                    <span class="text-xs px-2.5 py-1 bg-emerald-950 text-emerald-400 rounded-full border border-emerald-800">${statuses[brand].status} (Ping: ${statuses[brand].ping}ms)</span>
+                </div>
+            `).join('');
+        }
+
         function addSysLog(text) {
             const box = document.getElementById('sysLogBox');
+            if (!box) return;
             box.innerHTML += `<div>[${new Date().toLocaleTimeString()}] [SYSTEM] ${text}</div>`;
             box.scrollTop = box.scrollHeight;
         }
 
         function addChatLog(text) {
             const box = document.getElementById('chatLogBox');
+            if (!box) return;
             box.innerHTML += `<div>[${new Date().toLocaleTimeString()}] [ws] ${text}</div>`;
             box.scrollTop = box.scrollHeight;
         }
 
         function renderOrders() {
             const tbody = document.getElementById('ordersTableBody');
+            if (!tbody) return;
             if (globalOrders.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500 italic">Chưa có đơn hàng nào được tạo gần đây.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="p-4 text-center text-gray-500 italic">Chưa có đơn hàng nào trong hệ thống.</td></tr>';
                 return;
             }
             tbody.innerHTML = globalOrders.map(o => `
                 <tr class="hover:bg-darker/50 transition">
                     <td class="p-3.5 font-mono text-emerald-400 font-semibold">${o.id}</td>
-                    <td class="p-3.5 text-white font-medium">${o.serviceName}</td>
-                    <td class="p-3.5 text-gray-300 font-mono text-xs max-w-xs truncate">${o.link}</td>
+                    <td class="p-3.5 text-white font-medium">${o.userName || 'Khách'}</td>
+                    <td class="p-3.5 text-gray-300 font-medium">${o.serviceName}</td>
+                    <td class="p-3.5 text-gray-400 font-mono text-xs max-w-xs truncate"><a href="${o.link}" target="_blank" class="hover:underline text-sky-400">${o.link}</a></td>
                     <td class="p-3.5 font-mono">${o.quantity.toLocaleString()}</td>
                     <td class="p-3.5 font-mono text-amber-400">${o.totalCost.toLocaleString()} đ</td>
                     <td class="p-3.5"><span class="px-2.5 py-1 bg-emerald-950 text-emerald-400 text-xs rounded-full border border-emerald-800">${o.status}</span></td>
