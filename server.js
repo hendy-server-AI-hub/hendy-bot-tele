@@ -14,6 +14,7 @@ const PORT = process.env.PORT || 8080;
 const BOT_TOKEN = process.env.BOT_TOKEN || process.env.TELEGRAM_TOKEN || '8689114890:AAFBFM0rNtZWpOtAovIPHPVQTJVp0odU1DQ';
 const ADMIN_ID = process.env.ADMIN_ID || '6138197737';
 const CHANNEL_ID = process.env.CHANNEL_ID || '-100xxxxxxxxx';
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'hendy_secret_key_2026';
 
 const BANK_CONFIG = {
     bankId: 'MB',
@@ -260,7 +261,6 @@ class AISessionManager {
         const targetQty = parseInt(order.quantity) || 100;
         let completed = 0;
 
-        // Tiến trình xử lý (Có thể thay thế bằng Puppeteer thực tế tại đây)
         const interval = setInterval(() => {
             if (completed >= targetQty) {
                 clearInterval(interval);
@@ -316,11 +316,66 @@ class AISessionManager {
 const aiEngine = new AISessionManager(10);
 
 // ==========================================
-// 🌐 REST API ENDPOINTS
+// 🌐 REST API & PUPPETEER CRAWL ENDPOINTS
 // ==========================================
+const verifyInternalSecret = (req, res, next) => {
+    const secret = req.headers['x-internal-secret'] || req.headers['X-Internal-Secret'];
+    if (!secret || secret !== INTERNAL_SECRET) {
+        return res.status(403).json({ error: 'Unauthorized request from Edge Worker' });
+    }
+    next();
+};
 
 app.get('/health', (req, res) => {
     res.json({ status: 'OK', system: 'Master Control Panel V6100' });
+});
+
+// Endpoint nhận lệnh cào dữ liệu từ Cloudflare Worker (Puppeteer)
+app.post('/api/smm/run-puppeteer', verifyInternalSecret, async (req, res) => {
+    const { targetUrl, chatId } = req.body;
+    if (!targetUrl) {
+        return res.status(400).json({ success: false, error: 'Target URL is required' });
+    }
+
+    let browser = null;
+    try {
+        aiEngine.broadcastLog(`[PUPPETEER] Bắt đầu cào dữ liệu cho URL: ${targetUrl} (ChatID: ${chatId || 'API'})`);
+        
+        let puppeteer;
+        try {
+            puppeteer = require('puppeteer');
+        } catch (e) {
+            return res.status(500).json({ success: false, error: 'Thư viện Puppeteer chưa được cài đặt trên Backend.' });
+        }
+
+        browser = await puppeteer.launch({
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        });
+        const page = await browser.newPage();
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        
+        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        
+        const pageTitle = await page.title();
+        const metaDescription = await page.$eval('meta[name="description"]', el => el.content).catch(() => 'Không có mô tả');
+        
+        const extractedData = {
+            title: pageTitle,
+            description: metaDescription,
+            url: targetUrl,
+            scrapedAt: new Date().toISOString()
+        };
+
+        await browser.close();
+        aiEngine.broadcastLog(`[PUPPETEER] ✅ Cào thành công trang: ${pageTitle}`);
+        return res.json({ success: true, data: extractedData });
+
+    } catch (err) {
+        if (browser) await browser.close().catch(() => {});
+        aiEngine.broadcastLog(`[PUPPETEER ERROR] ${err.message}`);
+        return res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 app.post('/api/ai/run-all', (req, res) => {
