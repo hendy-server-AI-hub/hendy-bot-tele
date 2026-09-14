@@ -193,6 +193,7 @@ Chào mừng sếp, *${u.name}*
         [{ text: '🌐 DỊCH VỤ MẠNG XÃ HỘI', callback_data: 'smm_main' }],
         [{ text: '🎟️ TRUNG TÂM MUA CODE', callback_data: 'buy_code' }],
         [{ text: '💳 NẠP TIỀN', callback_data: 'deposit' }, { text: '📇 TRUNG TÂM KHÁCH HÀNG', callback_data: 'customer_center' }],
+        ...(isAdmin ? [[{ text: '🛡️ TRUNG TÂM ADMIN (QUẢN LÝ)', callback_data: 'admin_center' }]] : []),
         [{ text: '👥 NHÓM HỖ TRỢ', url: 'https://t.me/Hendy_Support_Group' }]
     ];
 
@@ -271,13 +272,81 @@ function setupBotLogic() {
         }
     });
 
+    // --- LỆNH ADMIN CỘNG TIỀN / NẠP / HOÀN TIỀN: /cong [ID] [Số tiền] [Lý do] ---
+    bot.onText(/\/cong (\d+) (\d+)(?:\s+(.+))?/, (msg, match) => {
+        const chatId = msg.chat.id.toString();
+        if (chatId !== ADMIN_ID) {
+            bot.sendMessage(chatId, '❌ Bạn không có quyền sử dụng lệnh này!');
+            return;
+        }
+
+        const targetId = match[1];
+        const amount = parseInt(match[2]);
+        const reason = match[3] || 'Nạp tiền thủ công / Hoàn tiền từ Admin';
+
+        if (!users[targetId]) {
+            bot.sendMessage(chatId, `❌ Không tìm thấy khách hàng có ID: \`${targetId}\``, { parse_mode: 'Markdown' });
+            return;
+        }
+
+        users[targetId].balance += amount;
+        saveDatabase();
+
+        bot.sendMessage(chatId, `✅ Đã cộng thành công \`${amount.toLocaleString()} VNĐ\` cho khách *${users[targetId].name}* (ID: \`${targetId}\`).\n💰 Số dư mới: \`${users[targetId].balance.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' });
+
+        try {
+            bot.sendMessage(
+                targetId, 
+                `💳 *TÀI KHOẢN ĐÃ ĐƯỢC CỘNG TIỀN!*\n\n` +
+                `💰 Số tiền nhận: \`+${amount.toLocaleString()} VNĐ\`\n` +
+                `📌 Lý do: ${reason}\n` +
+                `💎 Số dư hiện tại: \`${users[targetId].balance.toLocaleString()} VNĐ\``, 
+                { parse_mode: 'Markdown' }
+            );
+        } catch (e) {}
+    });
+
+    // --- LỆNH ADMIN TRỪ TIỀN: /tru [ID] [Số tiền] [Lý do] ---
+    bot.onText(/\/tru (\d+) (\d+)(?:\s+(.+))?/, (msg, match) => {
+        const chatId = msg.chat.id.toString();
+        if (chatId !== ADMIN_ID) {
+            bot.sendMessage(chatId, '❌ Bạn không có quyền sử dụng lệnh này!');
+            return;
+        }
+
+        const targetId = match[1];
+        const amount = parseInt(match[2]);
+        const reason = match[3] || 'Điều chỉnh số dư từ Admin';
+
+        if (!users[targetId]) {
+            bot.sendMessage(chatId, `❌ Không tìm thấy khách hàng có ID: \`${targetId}\``, { parse_mode: 'Markdown' });
+            return;
+        }
+
+        users[targetId].balance -= amount;
+        saveDatabase();
+
+        bot.sendMessage(chatId, `✅ Đã trừ \`${amount.toLocaleString()} VNĐ\` của khách *${users[targetId].name}* (ID: \`${targetId}\`).\n💰 Số dư mới: \`${users[targetId].balance.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' });
+
+        try {
+            bot.sendMessage(
+                targetId, 
+                `⚠️ *THÔNG BÁO BIẾN ĐỘNG SỐ DƯ*\n\n` +
+                `📉 Số tiền bị trừ: \`-${amount.toLocaleString()} VNĐ\`\n` +
+                `📌 Lý do: ${reason}\n` +
+                `💎 Số dư hiện tại: \`${users[targetId].balance.toLocaleString()} VNĐ\``, 
+                { parse_mode: 'Markdown' }
+            );
+        } catch (e) {}
+    });
+
     // --- LẮNG NGHE TIN NHẮN VĂN BẢN (LINK & SỐ LƯỢNG) ---
     bot.on('message', async (msg) => {
         const chatId = msg.chat.id.toString();
         const text = msg.text;
         let u = users[chatId];
         
-        if (!u || !text || text.startsWith('/start') || text.startsWith('/done')) return;
+        if (!u || !text || text.startsWith('/start') || text.startsWith('/done') || text.startsWith('/cong') || text.startsWith('/tru')) return;
 
         if (text === '/cancel' && u.actionState) {
             delete u.actionState;
@@ -315,7 +384,7 @@ function setupBotLogic() {
             if (u.balance < totalCost) {
                 bot.sendMessage(
                     chatId, 
-                    `❌ Tài khoản của bạn không đủ!\n💰 Số dư: \`${u.balance.toLocaleString()} VNĐ\`\n📉 Yêu cầu: \`${totalCost.toLocaleString()} VNĐ\`\n\n👉 Vui lòng nạp thêm tiền.`, 
+                    `❌ Tài khoản của bạn không đủ!\n💰 Số dư: \`${u.balance.toLocaleString()} VNĐ\`\n📉 Yêu cầu: \`${totalCost.toLocaleString()} VNĐ\`\n\n👉 Vui lòng liên hệ Admin để nạp thêm tiền.`, 
                     { parse_mode: 'Markdown' }
                 );
                 delete u.actionState; 
@@ -443,6 +512,45 @@ function setupBotLogic() {
             
             bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
         }
+        // TÍNH NĂNG MỚI: TRUNG TÂM ADMIN (QUẢN LÝ KHÁCH HÀNG & VÍ)
+        else if (data === 'admin_center') {
+            if (chatId !== ADMIN_ID) {
+                bot.answerCallbackQuery(query.id, { text: '❌ Bạn không có quyền truy cập!', show_alert: true });
+                return;
+            }
+
+            const totalUsers = Object.keys(users).length;
+            let totalBalance = 0;
+            let totalOrders = 0;
+            Object.values(users).forEach(usr => {
+                totalBalance += (usr.balance || 0);
+                if (usr.orders) totalOrders += usr.orders.length;
+            });
+
+            let text = `🛡️ *TRUNG TÂM QUẢN LÝ ADMIN*\n--------------------------------------------------\n`;
+            text += `👥 Tổng khách hàng: \`${totalUsers}\`\n`;
+            text += `💰 Tổng số dư ví khách: \`${totalBalance.toLocaleString()} VNĐ\`\n`;
+            text += `📦 Tổng số đơn hệ thống: \`${totalOrders}\`\n`;
+            text += `--------------------------------------------------\n`;
+            text += `⚙️ *CÚ PHÁP THỰC THI (Gõ vào khung chat):*\n`;
+            text += `• Cộng/Nạp/Hoàn: \`/cong <ID> <Số tiền> [Lý do]\`\n`;
+            text += `• Trừ tiền ví: \`/tru <ID> <Số tiền> [Lý do]\`\n`;
+            text += `• Duyệt hoàn thành: \`/done <Mã đơn>\`\n\n`;
+            text += `📋 *10 KHÁCH HÀNG GẦN NHẤT:* \n`;
+
+            const recentUserIds = Object.keys(users).slice(-10).reverse();
+            recentUserIds.forEach(uid => {
+                const usr = users[uid];
+                text += `• ${usr.name} (ID: \`${uid}\`) ➔ Ví: \`${(usr.balance || 0).toLocaleString()}đ\`\n`;
+            });
+
+            let kb = [
+                [{ text: '🔄 Làm mới thông tin', callback_data: 'admin_center' }],
+                [{ text: '◀ Quay lại Trang chủ', callback_data: 'back_start' }]
+            ];
+
+            bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
+        }
         else if (data === 'buy_code') {
             let textMenu = `🎟️ *TRUNG TÂM MUA CODE & NHÀ CÁI*\n☕ Chào sếp *${u.name}*\n--------------------------------------------------\n`;
             let kb = [];
@@ -474,7 +582,7 @@ function startBot(token) {
     try {
         bot = new TelegramBot(token, { polling: true });
         setupBotLogic();
-        console.log('🤖 Bot Dịch Vụ MXH đã khởi động thành công!');
+        console.log('🤖 Bot Dịch Vụ MXH (Có Trung tâm Admin) đã khởi động thành công!');
 
         setInterval(() => {
             try {
