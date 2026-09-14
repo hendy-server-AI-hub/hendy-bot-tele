@@ -320,7 +320,9 @@ function setupBotLogic() {
                 quantity: quantity,
                 totalCost: totalCost,
                 status: '✅ Đã hoàn thành',
-                date: new Date().toLocaleString('vi-VN')
+                date: new Date().toLocaleString('vi-VN'),
+                userName: u.name,
+                chatId: chatId
             };
 
             u.orders.push(newOrder);
@@ -541,9 +543,51 @@ function startBot(token) {
     }
 }
 
+// ==========================================
+// 🌐 WEBSOCKET CONNECTION & INIT SYNC
+// ==========================================
 wss.on('connection', (ws) => {
     masterWebSocket = ws;
     console.log('🌐 Web Dashboard đã kết nối WebSocket thành công.');
+
+    // 🚀 Thu thập dữ liệu từ database để gửi snapshot ban đầu khi Dashboard kết nối
+    let totalUsers = Object.keys(users).length;
+    let totalBalance = 0;
+    let allOrders = [];
+
+    Object.keys(users).forEach(uid => {
+        let u = users[uid];
+        totalBalance += (u.balance || 0);
+        if (u.orders && Array.isArray(u.orders)) {
+            u.orders.forEach(o => {
+                allOrders.push({
+                    ...o,
+                    userName: u.name || 'Khách'
+                });
+            });
+        }
+    });
+
+    // Sắp xếp đơn mới nhất lên đầu
+    allOrders.reverse();
+
+    ws.send(JSON.stringify({
+        type: 'INIT_DATA',
+        totalUsers: totalUsers,
+        totalBalance: totalBalance,
+        orders: allOrders,
+        brandStatuses: brandStatuses
+    }));
+
+    ws.on('message', (message) => {
+        try {
+            const data = JSON.parse(message);
+            if (data.action === 'PING') {
+                ws.send(JSON.stringify({ type: 'PONG', timestamp: data.timestamp }));
+            }
+        } catch (e) {}
+    });
+
     ws.on('close', () => {
         if (masterWebSocket === ws) masterWebSocket = null;
         console.log('🔌 Web Dashboard đã ngắt kết nối WebSocket.');
