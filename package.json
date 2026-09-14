@@ -1,14 +1,13 @@
 {
   "name": "hendy-railway-server",
   "version": "1.0.0",
-  "description": "Server dịch vụ Telegram và API",
+  "description": "Backend REST API Server cho hệ sinh thái và Bot Python",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "node-telegram-bot-api": "^0.66.0"
+    "dotenv": "^16.3.1"
   }
 }
