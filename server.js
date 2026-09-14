@@ -14,7 +14,7 @@ const CHANNEL_ID = process.env.CHANNEL_ID || '-100xxxxxxxxx';
 
 const DB_FILE = path.join(__dirname, 'database.json');
 let users = {};
-let adminSession = {}; // Lưu trạng thái thao tác của Admin (Cộng/Trừ tiền không cần cú pháp)
+let adminSession = {}; 
 let masterWebSocket = null;
 let bot = null;
 
@@ -176,6 +176,13 @@ function generateOrderId() {
     return 'ORD' + Math.floor(Math.random() * 90000 + 10000);
 }
 
+// Hàm AI Bot tự tạo tài khoản định danh cho dịch vụ
+function generateServiceAccount() {
+    const accId = 'bot_acc_' + Math.floor(Math.random() * 89999 + 10000);
+    const passKey = 'key_' + Math.random().toString(36).substring(2, 8);
+    return `${accId} | Mật khẩu/Token: ${passKey}`;
+}
+
 // ==========================================
 // 🤖 KHỞI TẠO BOT TELEGRAM & LOGIC CHÍNH
 // ==========================================
@@ -273,7 +280,7 @@ function setupBotLogic() {
         }
     });
 
-    // --- LẮNG NGHE TIN NHẮN VĂN BẢN (XỬ LÝ DỊCH VỤ & ADMIN SESSION) ---
+    // --- LẮNG NGHE TIN NHẮN VĂN BẢN ---
     bot.on('message', async (msg) => {
         const chatId = msg.chat.id.toString();
         const text = msg.text;
@@ -291,7 +298,7 @@ function setupBotLogic() {
             return;
         }
 
-        // 🛡️ XỬ LÝ NHẬP SỐ TIỀN TỪ ADMIN (KHÔNG CẦN CÚ PHÁP)
+        // 🛡️ XỬ LÝ NHẬP SỐ TIỀN TỪ ADMIN
         if (chatId === ADMIN_ID && adminSession[chatId]) {
             const session = adminSession[chatId];
             const amount = parseInt(text.replace(/[,.]/g, ''));
@@ -361,7 +368,7 @@ function setupBotLogic() {
             return;
         }
 
-        // 2. Chờ nhập Số lượng đặt dịch vụ MXH
+        // 2. Chờ nhập Số lượng đặt dịch vụ MXH & TỰ TẠO TÀI KHOẢN HỆ THỐNG
         if (u.actionState && u.actionState.step === 'WAITING_QUANTITY') {
             const quantity = parseInt(text);
             
@@ -383,10 +390,14 @@ function setupBotLogic() {
                 return;
             }
 
+            // Trừ tiền ví
             u.balance -= totalCost;
             const orderDetail = u.actionState;
             const newOrderId = generateOrderId();
             
+            // 🤖 TỰ ĐỘNG TẠO TÀI KHOẢN HỆ THỐNG CHO ĐƠN HÀNG
+            const autoAccountInfo = generateServiceAccount();
+
             if (!u.orders) u.orders = [];
             u.orders.push({
                 id: newOrderId,
@@ -394,6 +405,7 @@ function setupBotLogic() {
                 link: orderDetail.link,
                 quantity: quantity,
                 totalCost: totalCost,
+                serviceAccount: autoAccountInfo, // Lưu thông tin tài khoản tự tạo
                 status: '⏳ Đang xử lý',
                 date: new Date().toLocaleString('vi-VN')
             });
@@ -401,23 +413,26 @@ function setupBotLogic() {
             delete u.actionState; 
             saveDatabase();
 
+            // Gửi tin nhắn thành công cho khách kèm tài khoản tự tạo
             bot.sendMessage(
                 chatId, 
-                `✅ *ĐẶT HÀNG THÀNH CÔNG!*\n\n` +
+                `✅ *ĐẶT HÀNG THÀNH CÔNG & KHỞI TẠO TÀI KHOẢN!* 🤖\n\n` +
                 `🏷️ Mã đơn: *${newOrderId}*\n` +
                 `📌 Dịch vụ: *${orderDetail.serviceName}*\n` +
                 `🔗 Link: ${orderDetail.link}\n` +
                 `📊 Số lượng: ${quantity.toLocaleString()}\n` +
+                `🔑 *Tài khoản hệ thống tự tạo:* \`${autoAccountInfo}\`\n` +
                 `💸 Tổng tiền: \`-${totalCost.toLocaleString()} VNĐ\`\n` +
                 `💰 Số dư còn lại: \`${u.balance.toLocaleString()} VNĐ\`\n\n` +
-                `⏳ *Hệ thống đang xử lý đơn hàng của bạn...*`,
+                `⏳ *Hệ thống đang tiến hành xử lý tự động...*`,
                 { parse_mode: 'Markdown' }
             );
 
+            // Báo cáo về cho Admin
             try {
                 bot.sendMessage(
                     ADMIN_ID, 
-                    `🔔 *CÓ ĐƠN SMM MỚI*\n👤 Khách: ${u.name} (ID: \`${chatId}\`)\n🏷️ Mã Đơn: ${newOrderId}\n📌 Dịch vụ: ${orderDetail.serviceName}\n🔗 Link: ${orderDetail.link}\n📊 SL: ${quantity}\n💵 Tổng thu: ${totalCost.toLocaleString()} VNĐ\n\n_💡 Gõ /done ${newOrderId} để duyệt đơn._`, 
+                    `🔔 *CÓ ĐƠN SMM MỚI (AI AUTO TẠO TK)*\n👤 Khách: ${u.name} (ID: \`${chatId}\`)\n🏷️ Mã Đơn: ${newOrderId}\n📌 Dịch vụ: ${orderDetail.serviceName}\n🔗 Link: ${orderDetail.link}\n📊 SL: ${quantity}\n🔑 TK Cấp: \`${autoAccountInfo}\`\n💵 Tổng thu: ${totalCost.toLocaleString()} VNĐ\n\n_💡 Gõ /done ${newOrderId} để duyệt đơn._`, 
                     { parse_mode: 'Markdown' }
                 );
             } catch (e) {}
@@ -478,7 +493,7 @@ function setupBotLogic() {
             if (!u.orders) u.orders = [];
             
             let text = `📇 *TRUNG TÂM KHÁCH HÀNG*\n👤 Xin chào sếp: *${u.name}*\n💰 Số dư ví: \`${u.balance.toLocaleString()} VNĐ\`\n--------------------------------------------------\n`;
-            text += `📦 *DANH SÁCH ĐƠN HÀNG:*\n\n`;
+            text += `📦 *DANH SÁCH ĐƠN HÀNG (KÈM TÀI KHOẢN TỰ TẠO):*\n\n`;
 
             const userOrders = u.orders.slice().reverse().slice(0, 15);
 
@@ -489,6 +504,9 @@ function setupBotLogic() {
                     text += `🏷️ *Mã đơn:* \`${o.id}\`\n`;
                     text += `📌 *Dịch vụ:* ${o.serviceName}\n`;
                     text += `🔗 *Link:* ${o.link}\n`;
+                    if (o.serviceAccount) {
+                        text += `🔑 *Tài khoản cấp:* \`${o.serviceAccount}\`\n`;
+                    }
                     text += `📊 *SL:* ${o.quantity.toLocaleString()} | 💸 \`${o.totalCost.toLocaleString()} VNĐ\`\n`;
                     text += `⏰ *Lúc:* ${o.date}\n`;
                     text += `🔄 *Trạng thái:* ${o.status}\n`;
@@ -504,7 +522,7 @@ function setupBotLogic() {
         }
         
         // ==========================================
-        // 🛡️ GIAO DIỆN TRUNG TÂM ADMIN INTERACTIVE
+        // 🛡️ TRUNG TÂM ADMIN INTERACTIVE
         // ==========================================
         else if (data === 'admin_center') {
             if (chatId !== ADMIN_ID) {
@@ -528,7 +546,6 @@ function setupBotLogic() {
             text += `👉 *Chọn khách hàng bên dưới để quản lý số dư (Cộng / Trừ / Hoàn tiền nhanh):*\n`;
 
             let kb = [];
-            // Hiển thị danh sách 10 khách hàng gần nhất dưới dạng nút bấm
             const recentUserIds = Object.keys(users).slice(-10).reverse();
             recentUserIds.forEach(uid => {
                 const usr = users[uid];
@@ -539,7 +556,6 @@ function setupBotLogic() {
 
             bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
         }
-        // Xem chi tiết khách hàng cụ thể khi Admin bấm vào
         else if (data.startsWith('admin_user_')) {
             if (chatId !== ADMIN_ID) return;
             const targetId = data.replace('admin_user_', '');
@@ -568,7 +584,6 @@ function setupBotLogic() {
 
             bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
         }
-        // Bấm nút Cộng tiền -> Kích hoạt phiên nhập số tiền
         else if (data.startsWith('admin_add_')) {
             if (chatId !== ADMIN_ID) return;
             const targetId = data.replace('admin_add_', '');
@@ -585,7 +600,6 @@ function setupBotLogic() {
                 { parse_mode: 'Markdown' }
             );
         }
-        // Bấm nút Trừ tiền -> Kích hoạt phiên nhập số tiền
         else if (data.startsWith('admin_sub_')) {
             if (chatId !== ADMIN_ID) return;
             const targetId = data.replace('admin_sub_', '');
@@ -634,7 +648,7 @@ function startBot(token) {
     try {
         bot = new TelegramBot(token, { polling: true });
         setupBotLogic();
-        console.log('🤖 Bot Dịch Vụ MXH (Interactive Admin Center) đã khởi động thành công!');
+        console.log('🤖 Bot Dịch Vụ MXH (AI Auto-Account + Interactive Admin) đã khởi động thành công!');
 
         setInterval(() => {
             try {
