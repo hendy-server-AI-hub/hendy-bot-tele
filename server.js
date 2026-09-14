@@ -248,7 +248,7 @@ class AISessionManager {
         }
         saveDatabase();
 
-        this.broadcastLog(`[AI ENGINE] Khởi tạo luồng ${sessionId} chạy đơn #${order.id}`);
+        this.broadcastLog(`[AI ENGINE] Khởi tạo luồng ${sessionId} chạy đơn #${order.id} cho link: ${order.link}`);
         this.broadcastSessionState();
         this.broadcastOrderUpdate();
         this.runWorkerSession(sessionId, order);
@@ -260,6 +260,7 @@ class AISessionManager {
         const targetQty = parseInt(order.quantity) || 100;
         let completed = 0;
 
+        // Tiến trình xử lý (Có thể thay thế bằng Puppeteer thực tế tại đây)
         const interval = setInterval(() => {
             if (completed >= targetQty) {
                 clearInterval(interval);
