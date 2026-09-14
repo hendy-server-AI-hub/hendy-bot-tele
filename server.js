@@ -14,12 +14,10 @@ const currentToken = process.env.BOT_TOKEN || '8689114890:AAFBFM0rNtZWpOtAovIPHP
 const ADMIN_ID = process.env.ADMIN_ID || '6138197737';
 const CHANNEL_ID = process.env.CHANNEL_ID || '-100xxxxxxxxx';
 
-// Khởi tạo Express & HTTP Server (Dùng chung cổng với WebSocket để chạy trên Railway)
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Cấu hình Express phục vụ giao diện Web Dashboard (file index.html cùng thư mục)
 app.use(express.static(__dirname));
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
@@ -158,7 +156,6 @@ function loadDatabase() {
             });
             console.log(`✅ Đã tải dữ liệu của ${Object.keys(users).length} khách hàng.`);
         } else {
-            console.log('⚠️ Chưa có file database.json, khởi tạo database mới.');
             users = {};
             saveDatabase();
         }
@@ -187,12 +184,6 @@ function getSystemStatusText() {
 
 function generateOrderId() {
     return 'ORD' + Math.floor(Math.random() * 90000 + 10000);
-}
-
-function generateServiceAccount() {
-    const accId = 'bot_acc_' + Math.floor(Math.random() * 89999 + 10000);
-    const passKey = 'key_' + Math.random().toString(36).substring(2, 8);
-    return `${accId} | Mật khẩu/Token: ${passKey}`;
 }
 
 // ==========================================
@@ -244,46 +235,6 @@ function setupBotLogic() {
         saveDatabase();
 
         sendHomeMenu(chatId, users[chatId], isAdmin);
-    });
-
-    bot.onText(/\/done (.+)/, (msg, match) => {
-        const chatId = msg.chat.id.toString();
-        if (chatId !== ADMIN_ID) return;
-
-        const orderIdToFind = match[1].trim();
-        let found = false;
-
-        Object.keys(users).forEach(uid => {
-            if (users[uid].orders) {
-                users[uid].orders.forEach(o => {
-                    if (o.id === orderIdToFind) {
-                        o.status = '✅ Đã hoàn thành';
-                        found = true;
-                        
-                        try {
-                            bot.sendMessage(
-                                uid, 
-                                `🎉 *ĐƠN HÀNG ĐÃ HOÀN TẤT!*\n\n` +
-                                `🏷️ Mã đơn: \`${o.id}\`\n` +
-                                `📌 Dịch vụ: ${o.serviceName}\n` +
-                                `🔗 Link: ${o.link}\n` +
-                                `📊 Số lượng: ${o.quantity.toLocaleString()}\n` +
-                                `✨ Trạng thái: *Đã hoàn thành giao dịch thành công!*`, 
-                                { parse_mode: 'Markdown' }
-                            );
-                        } catch (e) {}
-                    }
-                });
-            }
-        });
-
-        saveDatabase();
-
-        if (found) {
-            bot.sendMessage(chatId, `✅ Đã duyệt đơn hàng *${orderIdToFind}* thành công.`);
-        } else {
-            bot.sendMessage(chatId, `❌ Không tìm thấy mã đơn: *${orderIdToFind}*`);
-        }
     });
 
     bot.on('message', async (msg) => {
@@ -368,41 +319,40 @@ function setupBotLogic() {
             u.balance -= totalCost;
             const orderDetail = u.actionState;
             const newOrderId = generateOrderId();
-            const autoAccountInfo = generateServiceAccount();
 
             if (!u.orders) u.orders = [];
+            // TỰ ĐỘNG HOÀN TẤT ĐƠN HÀNG NGAY LẬP TỨC CHO TẤT CẢ DỊCH VỤ MXH
             u.orders.push({
                 id: newOrderId,
                 serviceName: orderDetail.serviceName,
                 link: orderDetail.link,
                 quantity: quantity,
                 totalCost: totalCost,
-                serviceAccount: autoAccountInfo,
-                status: '⏳ Đang xử lý',
+                status: '✅ Đã hoàn thành',
                 date: new Date().toLocaleString('vi-VN')
             });
 
             delete u.actionState; 
             saveDatabase();
 
+            // KHÔNG HIỂN THỊ DÒNG TÀI KHOẢN TỰ TẠO TRÊN TIN NHẮN BOT
             bot.sendMessage(
                 chatId, 
-                `✅ *ĐẶT HÀNG THÀNH CÔNG & KHỞI TẠO TÀI KHOẢN!* 🤖\n\n` +
+                `✅ *ĐẶT HÀNG THÀNH CÔNG & ĐÃ HOÀN TẤT!* 🚀\n\n` +
                 `🏷️ Mã đơn: *${newOrderId}*\n` +
                 `📌 Dịch vụ: *${orderDetail.serviceName}*\n` +
                 `🔗 Link: ${orderDetail.link}\n` +
                 `📊 Số lượng: ${quantity.toLocaleString()}\n` +
-                `🔑 *Tài khoản hệ thống tự tạo:* \`${autoAccountInfo}\`\n` +
                 `💸 Tổng tiền: \`-${totalCost.toLocaleString()} VNĐ\`\n` +
                 `💰 Số dư còn lại: \`${u.balance.toLocaleString()} VNĐ\`\n\n` +
-                `⏳ *Hệ thống đang tiến hành xử lý tự động...*`,
+                `✨ Trạng thái: *✅ Đã hoàn thành tự động thành công!*`,
                 { parse_mode: 'Markdown' }
             );
 
             try {
                 bot.sendMessage(
                     ADMIN_ID, 
-                    `🔔 *CÓ ĐƠN SMM MỚI (AI AUTO TẠO TK)*\n👤 Khách: ${u.name} (ID: \`${chatId}\`)\n🏷️ Mã Đơn: ${newOrderId}\n📌 Dịch vụ: ${orderDetail.serviceName}\n🔗 Link: ${orderDetail.link}\n📊 SL: ${quantity}\n🔑 TK Cấp: \`${autoAccountInfo}\`\n💵 Tổng thu: ${totalCost.toLocaleString()} VNĐ\n\n_💡 Gõ /done ${newOrderId} để duyệt đơn._`, 
+                    `🔔 *ĐƠN SMM MỚI (TỰ ĐỘNG HOÀN TẤT)*\n👤 Khách: ${u.name} (ID: \`${chatId}\`)\n🏷️ Mã Đơn: ${newOrderId}\n📌 Dịch vụ: ${orderDetail.serviceName}\n🔗 Link: ${orderDetail.link}\n📊 SL: ${quantity}\n💵 Tổng thu: ${totalCost.toLocaleString()} VNĐ`, 
                     { parse_mode: 'Markdown' }
                 );
             } catch (e) {}
@@ -458,7 +408,7 @@ function setupBotLogic() {
             if (!u.orders) u.orders = [];
             
             let text = `📇 *TRUNG TÂM KHÁCH HÀNG*\n👤 Xin chào sếp: *${u.name}*\n💰 Số dư ví: \`${u.balance.toLocaleString()} VNĐ\`\n--------------------------------------------------\n`;
-            text += `📦 *DANH SÁCH ĐƠN HÀNG (KÈM TÀI KHOẢN TỰ TẠO):*\n\n`;
+            text += `📦 *DANH SÁCH ĐƠN HÀNG:*\n\n`;
 
             const userOrders = u.orders.slice().reverse().slice(0, 15);
 
@@ -469,9 +419,6 @@ function setupBotLogic() {
                     text += `🏷️ *Mã đơn:* \`${o.id}\`\n`;
                     text += `📌 *Dịch vụ:* ${o.serviceName}\n`;
                     text += `🔗 *Link:* ${o.link}\n`;
-                    if (o.serviceAccount) {
-                        text += `🔑 *Tài khoản cấp:* \`${o.serviceAccount}\`\n`;
-                    }
                     text += `📊 *SL:* ${o.quantity.toLocaleString()} | 💸 \`${o.totalCost.toLocaleString()} VNĐ\`\n`;
                     text += `⏰ *Lúc:* ${o.date}\n`;
                     text += `🔄 *Trạng thái:* ${o.status}\n`;
@@ -579,15 +526,6 @@ function startBot(token) {
         bot = new TelegramBot(token, { polling: true });
         setupBotLogic();
         console.log('🤖 Bot Telegram đã khởi động thành công!');
-
-        setInterval(() => {
-            try {
-                if (bot && CHANNEL_ID.includes('-100')) {
-                    bot.sendMessage(CHANNEL_ID, getSystemStatusText(), { parse_mode: 'Markdown' });
-                }
-            } catch (e) {}
-        }, 3600000);
-
         return true;
     } catch (e) {
         console.error("❌ Lỗi khởi động bot:", e);
@@ -595,29 +533,13 @@ function startBot(token) {
     }
 }
 
-// ==========================================
-// ⚡ WEBSOCKET & HTTP SERVER START
-// ==========================================
 wss.on('connection', (ws) => {
-    console.log('[+] Một Tab Worker / Client vừa kết nối WebSocket!');
     masterWebSocket = ws;
-
-    ws.on('message', (message) => {
-        try {
-            const data = JSON.parse(message.toString());
-            console.log('[WS] Nhận dữ liệu:', data);
-        } catch (e) {
-            console.log('[WS Tin nhắn thuần]:', message.toString());
-        }
-    });
-
     ws.on('close', () => {
-        console.log('[-] Client đã ngắt kết nối WebSocket.');
         if (masterWebSocket === ws) masterWebSocket = null;
     });
 });
 
-// Khởi chạy đồng thời HTTP Server, WebSocket và Bot Telegram trên cùng một cổng PORT
 server.listen(PORT, () => {
     loadDatabase();
     startBot(currentToken);
