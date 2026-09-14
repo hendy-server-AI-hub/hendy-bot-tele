@@ -12,7 +12,6 @@ const fs = require('fs');
 const PORT = process.env.PORT || 8080;
 const currentToken = process.env.BOT_TOKEN || '8689114890:AAFBFM0rNtZWpOtAovIPHPVQTJVp0odU1DQ';
 const ADMIN_ID = process.env.ADMIN_ID || '6138197737';
-const CHANNEL_ID = process.env.CHANNEL_ID || '-100xxxxxxxxx';
 
 const app = express();
 const server = http.createServer(app);
@@ -26,7 +25,6 @@ app.get('/', (req, res) => {
 const DB_FILE = path.join(__dirname, 'database.json');
 let users = {};
 let adminSession = {}; 
-let masterWebSocket = null;
 let bot = null;
 
 const DEFAULT_LINKED_ACCOUNTS = {
@@ -39,15 +37,14 @@ const DEFAULT_LINKED_ACCOUNTS = {
 };
 
 // ==========================================
-// 📦 DANH MỤC DỊCH VỤ MXH
+// 📦 DANH MỤC DỊCH VỤ MXH (SMM)
 // ==========================================
 const SMM_SERVICES = {
     coin_master: {
         title: '🎲 SPIN COIN MASTER',
         items: [
             { name: 'Spin Coin Master', price: 1000 },
-            { name: 'Spin Coin Master (Extra)', price: 1500 },
-            { name: 'Sự Kiện Mời Đối Tác', price: 5000 }
+            { name: 'Spin Coin Master (Extra)', price: 1500 }
         ]
     },
     facebook: {
@@ -55,13 +52,7 @@ const SMM_SERVICES = {
         items: [
             { name: 'Tăng Like Facebook', price: 100 },
             { name: 'Tăng Follow Facebook', price: 150 },
-            { name: 'Tăng Lượt Xem Story', price: 50 },
-            { name: 'Tăng Share Bài Viết', price: 200 },
-            { name: 'Tăng Like / Follow Fanpage', price: 180 },
-            { name: 'Tăng View Live Stream', price: 300 },
-            { name: 'Tăng Member Facebook', price: 120 },
-            { name: 'Tăng Bình Luận Facebook', price: 250 },
-            { name: 'Tăng Lượt Xem Video', price: 40 }
+            { name: 'Tăng Share Bài Viết', price: 200 }
         ]
     },
     tiktok: {
@@ -69,48 +60,7 @@ const SMM_SERVICES = {
         items: [
             { name: 'Tăng Tim Tiktok', price: 80 },
             { name: 'Tăng Follow Tiktok', price: 120 },
-            { name: 'Tăng View Tiktok', price: 20 },
-            { name: 'Tăng Share Tiktok', price: 100 },
-            { name: 'Tăng Save Tiktok', price: 90 },
-            { name: 'Tăng Bình Luận Tiktok', price: 200 },
-            { name: 'Tăng Mắt Live Tiktok', price: 350 }
-        ]
-    },
-    instagram: {
-        title: '📸 DỊCH VỤ INSTAGRAM',
-        items: [
-            { name: 'Tăng Tim Bài Viết INS', price: 90 },
-            { name: 'Tăng Theo Dõi Instagram', price: 140 }
-        ]
-    },
-    youtube: {
-        title: '▶️ DỊCH VỤ YOUTUBE',
-        items: [
-            { name: 'Tăng Subscribe Youtube', price: 300 },
-            { name: 'Tăng View Youtube', price: 50 },
-            { name: 'Tăng Like Youtube', price: 100 }
-        ]
-    },
-    shopee: {
-        title: '🛍️ DỊCH VỤ SHOPEE',
-        items: [
-            { name: 'Tăng Theo Dõi Shopee', price: 150 },
-            { name: 'Tăng Tim Shopee', price: 80 },
-            { name: 'Tăng Mắt Live Shopee', price: 400 }
-        ]
-    },
-    twitter_x: {
-        title: '𝕏 DỊCH VỤ X (TWITTER)',
-        items: [
-            { name: 'Tăng Like X', price: 110 },
-            { name: 'Tăng Follow X', price: 160 },
-            { name: 'Tăng Lượt Xem X', price: 30 }
-        ]
-    },
-    bigo: {
-        title: '🐥 DỊCH VỤ BIGO LIVE',
-        items: [
-            { name: 'Tăng Mắt Xem Bigo Live', price: 500 }
+            { name: 'Tăng View Tiktok', price: 20 }
         ]
     },
     telegram: {
@@ -119,24 +69,11 @@ const SMM_SERVICES = {
             { name: 'Tăng Member Telegram Group/Channel', price: 130 },
             { name: 'Tăng View Bài Viết Telegram', price: 25 }
         ]
-    },
-    thread: {
-        title: '🌀 DỊCH VỤ THREAD',
-        items: [
-            { name: 'Tăng Follow Thread', price: 150 },
-            { name: 'Tăng Like Thread', price: 100 }
-        ]
     }
 };
 
-let brandStatuses = {
-    'SC88': { status: '🟢 Hoạt động', ping: 12 },
-    'C168': { status: '🟢 Hoạt động', ping: 15 },
-    'F8BET': { status: '🟢 Hoạt động', ping: 14 }
-};
-
 // ==========================================
-// 🗄️ QUẢN LÝ DATABASE
+// 🗄️ QUẢN LÝ DATABASE FILE
 // ==========================================
 function loadDatabase() {
     try {
@@ -178,11 +115,11 @@ function generateOrderId() {
 }
 
 // ==========================================
-// 🤖 KHỞI TẠO BOT TELEGRAM & LOGIC CHÍNH
+// 🤖 BOT TELEGRAM LOGIC
 // ==========================================
 function sendHomeMenu(chatId, u, isAdmin) {
     const welcomeMessage = `
-🤖 *HỆ THỐNG DỊCH VỤ MXH PRO* 🚀
+🤖 *MASTER CONTROL PANEL - HENDY & HADES V6100* 🚀
 Chào mừng sếp, *${u.name}*
 --------------------------------------------------
 💎 *Phân quyền:* ${isAdmin ? '👑 ADMIN TỐI CAO' : '👤 KHÁCH HÀNG'}
@@ -194,7 +131,7 @@ Chào mừng sếp, *${u.name}*
     const inlineKeyboard = [
         [{ text: '🌐 DỊCH VỤ MẠNG XÃ HỘI', callback_data: 'smm_main' }],
         [{ text: '🎟️ TRUNG TÂM MUA CODE', callback_data: 'buy_code' }],
-        [{ text: '💳 NẠP TIỀN', callback_data: 'deposit' }, { text: '📇 TRUNG TÂM KHÁCH HÀNG', callback_data: 'customer_center' }],
+        [{ text: '📇 TRUNG TÂM KHÁCH HÀNG', callback_data: 'customer_center' }],
         ...(isAdmin ? [[{ text: '🛡️ TRUNG TÂM ADMIN (QUẢN LÝ)', callback_data: 'admin_center' }]] : []),
         [{ text: '👥 NHÓM HỖ TRỢ', url: 'https://t.me/Hendy_Support_Group' }]
     ];
@@ -233,7 +170,7 @@ function setupBotLogic() {
         const text = msg.text;
         let u = users[chatId];
         
-        if (!u || !text || text.startsWith('/start') || text.startsWith('/done')) return;
+        if (!u || !text || text.startsWith('/start')) return;
 
         if (text === '/cancel') {
             if (u.actionState) delete u.actionState;
@@ -249,13 +186,11 @@ function setupBotLogic() {
             const amount = parseInt(text.replace(/[,.]/g, ''));
 
             if (isNaN(amount) || amount <= 0) {
-                bot.sendMessage(chatId, '❌ Số tiền không hợp lệ. Vui lòng chỉ nhập số (VD: 50000). Gõ /cancel để hủy.');
+                bot.sendMessage(chatId, '❌ Số tiền không hợp lệ. Vui lòng nhập số dương (VD: 50000). Gõ /cancel để hủy.');
                 return;
             }
 
-            const targetId = session.targetId;
-            const targetUser = users[targetId];
-
+            const targetUser = users[session.targetId];
             if (!targetUser) {
                 bot.sendMessage(chatId, '❌ Không tìm thấy thông tin khách hàng này.');
                 delete adminSession[chatId];
@@ -267,15 +202,12 @@ function setupBotLogic() {
                 saveDatabase();
                 bot.sendMessage(chatId, `✅ Đã CỘNG thành công \`${amount.toLocaleString()} VNĐ\` cho khách *${targetUser.name}*.\n💰 Số dư mới: \`${targetUser.balance.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' });
                 try {
-                    bot.sendMessage(targetId, `💳 *TÀI KHOẢN ĐÃ ĐƯỢC NẠP / CỘNG TIỀN!*\n\n💰 Số tiền: \`+${amount.toLocaleString()} VNĐ\`\n💎 Số dư: \`${targetUser.balance.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' });
+                    bot.sendMessage(session.targetId, `💳 *TÀI KHOẢN ĐƯỢC CỘNG TIỀN!*\n\n💰 Số tiền: \`+${amount.toLocaleString()} VNĐ\`\n💎 Số dư: \`${targetUser.balance.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' });
                 } catch (e) {}
             } else if (session.action === 'SUB') {
                 targetUser.balance -= amount;
                 saveDatabase();
                 bot.sendMessage(chatId, `✅ Đã TRỪ \`${amount.toLocaleString()} VNĐ\` của khách *${targetUser.name}*.\n💰 Số dư mới: \`${targetUser.balance.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' });
-                try {
-                    bot.sendMessage(targetId, `⚠️ *THÔNG BÁO TRỪ TIỀN VÍ*\n\n📉 Số tiền: \`-${amount.toLocaleString()} VNĐ\`\n💎 Số dư: \`${targetUser.balance.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' });
-                } catch (e) {}
             }
 
             delete adminSession[chatId];
@@ -292,17 +224,15 @@ function setupBotLogic() {
 
         if (u.actionState && u.actionState.step === 'WAITING_QUANTITY') {
             const quantity = parseInt(text);
-            
             if (isNaN(quantity) || quantity <= 0) {
-                bot.sendMessage(chatId, '❌ Số lượng không hợp lệ. Vui lòng chỉ nhập số dương (VD: 1000).');
+                bot.sendMessage(chatId, '❌ Số lượng không hợp lệ. Vui lòng nhập số dương.');
                 return;
             }
 
             const totalCost = quantity * u.actionState.price;
-
             if (u.balance < totalCost) {
-                bot.sendMessage(chatId, `❌ Tài khoản của bạn không đủ!\n💰 Số dư: \`${u.balance.toLocaleString()} VNĐ\`\n📉 Yêu cầu: \`${totalCost.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' });
-                delete u.actionState; 
+                bot.sendMessage(chatId, `❌ Tài khoản không đủ tiền!\n💰 Số dư: \`${u.balance.toLocaleString()} VNĐ\`\n📉 Yêu cầu: \`${totalCost.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' });
+                delete u.actionState;
                 saveDatabase();
                 return;
             }
@@ -310,7 +240,6 @@ function setupBotLogic() {
             u.balance -= totalCost;
             const orderDetail = u.actionState;
             const newOrderId = generateOrderId();
-
             if (!u.orders) u.orders = [];
 
             const newOrder = {
@@ -324,18 +253,14 @@ function setupBotLogic() {
             };
 
             u.orders.push(newOrder);
-            delete u.actionState; 
+            delete u.actionState;
             saveDatabase();
 
-            // 🚀 ĐỒNG BỘ DỮ LIỆU ĐƠN HÀNG QUA WEBSOCKET ĐẾN WEB DASHBOARD
+            // 🚀 BẮT SÓNG WEBSOCKET ĐẨY VỀ WEB DASHBOARD
             const wsPayload = JSON.stringify({
                 type: 'NEW_SMM_ORDER',
                 order: newOrder,
-                user: {
-                    chatId: chatId,
-                    name: u.name,
-                    balance: u.balance
-                }
+                user: { chatId: chatId, name: u.name, balance: u.balance }
             });
 
             wss.clients.forEach(client => {
@@ -344,26 +269,7 @@ function setupBotLogic() {
                 }
             });
 
-            bot.sendMessage(
-                chatId, 
-                `✅ *ĐẶT HÀNG THÀNH CÔNG & ĐÃ HOÀN TẤT!* 🚀\n\n` +
-                `🏷️ Mã đơn: *${newOrderId}*\n` +
-                `📌 Dịch vụ: *${orderDetail.serviceName}*\n` +
-                `🔗 Link: ${orderDetail.link}\n` +
-                `📊 Số lượng: ${quantity.toLocaleString()}\n` +
-                `💸 Tổng tiền: \`-${totalCost.toLocaleString()} VNĐ\`\n` +
-                `💰 Số dư còn lại: \`${u.balance.toLocaleString()} VNĐ\`\n\n` +
-                `✨ Trạng thái: *✅ Đã hoàn thành tự động thành công!*`,
-                { parse_mode: 'Markdown' }
-            );
-
-            try {
-                bot.sendMessage(
-                    ADMIN_ID, 
-                    `🔔 *ĐƠN SMM MỚI (TỰ ĐỘNG HOÀN TẤT)*\n👤 Khách: ${u.name} (ID: \`${chatId}\`)\n🏷️ Mã Đơn: ${newOrderId}\n📌 Dịch vụ: ${orderDetail.serviceName}\n🔗 Link: ${orderDetail.link}\n📊 SL: ${quantity}\n💵 Tổng thu: ${totalCost.toLocaleString()} VNĐ`, 
-                    { parse_mode: 'Markdown' }
-                );
-            } catch (e) {}
+            bot.sendMessage(chatId, `✅ *ĐẶT HÀNG THÀNH CÔNG!* 🚀\n🏷️ Mã đơn: *${newOrderId}*\n📌 Dịch vụ: *${orderDetail.serviceName}*\n📊 SL: ${quantity}\n💸 Tổng tiền: \`-${totalCost.toLocaleString()} VNĐ\`\n💰 Số dư còn lại: \`${u.balance.toLocaleString()} VNĐ\``, { parse_mode: 'Markdown' });
         }
     });
 
@@ -374,25 +280,25 @@ function setupBotLogic() {
         if (!u) return;
 
         if (data === 'smm_main') {
-            let text = `🌐 *DANH MỤC DỊCH VỤ MXH*\nVui lòng chọn nền tảng bạn muốn sử dụng:\n--------------------------------------------------\n`;
+            let text = `🌐 *DANH MỤC DỊCH VỤ MXH*\nVui chọn nền tảng:\n`;
             let kb = [];
             Object.keys(SMM_SERVICES).forEach(key => {
                 kb.push([{ text: SMM_SERVICES[key].title, callback_data: `smm_cat_${key}` }]);
             });
-            kb.push([{ text: '◀ Quay lại Trang chủ', callback_data: 'back_start' }]);
+            kb.push([{ text: '◀ Trang chủ', callback_data: 'back_start' }]);
             bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
         }
         else if (data.startsWith('smm_cat_')) {
             const catKey = data.replace('smm_cat_', '');
             const category = SMM_SERVICES[catKey];
             if (category) {
-                let text = `${category.title}\n--------------------------------------------------\n`;
+                let text = `${category.title}\n`;
                 let kb = [];
                 category.items.forEach((item, idx) => {
-                    text += `• *${item.name}*: \`${item.price.toLocaleString()} VNĐ/lượt\`\n`;
-                    kb.push([{ text: `🛒 Đặt hàng: ${item.name}`, callback_data: `order_${catKey}_${idx}` }]);
+                    text += `• *${item.name}*: \`${item.price}đ/lượt\`\n`;
+                    kb.push([{ text: `🛒 Đặt: ${item.name}`, callback_data: `order_${catKey}_${idx}` }]);
                 });
-                kb.push([{ text: '◀ Quay lại Danh mục', callback_data: 'smm_main' }]);
+                kb.push([{ text: '◀ Quay lại', callback_data: 'smm_main' }]);
                 bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
             }
         }
@@ -401,126 +307,39 @@ function setupBotLogic() {
             const catKey = parts[1];
             const itemIdx = parseInt(parts[2]);
             const item = SMM_SERVICES[catKey]?.items[itemIdx];
-
             if (item) {
-                u.actionState = {
-                    step: 'WAITING_LINK',
-                    serviceName: item.name,
-                    price: item.price
-                };
+                u.actionState = { step: 'WAITING_LINK', serviceName: item.name, price: item.price };
                 saveDatabase();
-                bot.sendMessage(chatId, `📌 Bạn đang đặt: *${item.name}*\n💰 Đơn giá: \`${item.price.toLocaleString()} VNĐ / 1 lượt\`\n\n👉 *Vui lòng dán Link / ID mục tiêu vào đây:*\n\n_(Gõ /cancel nếu bạn muốn hủy)_`, { parse_mode: 'Markdown' });
+                bot.sendMessage(chatId, `📌 Bạn đang đặt: *${item.name}*\n\n👉 *Dán Link mục tiêu vào đây:* (Gõ /cancel để hủy)`, { parse_mode: 'Markdown' });
             }
         }
         else if (data === 'customer_center') {
             if (!u.orders) u.orders = [];
-            
-            let text = `📇 *TRUNG TÂM KHÁCH HÀNG*\n👤 Xin chào sếp: *${u.name}*\n💰 Số dư ví: \`${u.balance.toLocaleString()} VNĐ\`\n--------------------------------------------------\n`;
-            text += `📦 *DANH SÁCH ĐƠN HÀNG:*\n\n`;
-
-            const userOrders = u.orders.slice().reverse().slice(0, 15);
-
-            if (userOrders.length === 0) {
-                text += `_Hiện tại bạn chưa có đơn hàng nào._\n`;
-            } else {
-                userOrders.forEach((o) => {
-                    text += `🏷️ *Mã đơn:* \`${o.id}\`\n`;
-                    text += `📌 *Dịch vụ:* ${o.serviceName}\n`;
-                    text += `🔗 *Link:* ${o.link}\n`;
-                    text += `📊 *SL:* ${o.quantity.toLocaleString()} | 💸 \`${o.totalCost.toLocaleString()} VNĐ\`\n`;
-                    text += `⏰ *Lúc:* ${o.date}\n`;
-                    text += `🔄 *Trạng thái:* ${o.status}\n`;
-                    text += `—\n`;
-                });
-            }
-
-            let kb = [[{ text: '◀ Quay lại Trang chủ', callback_data: 'back_start' }]];
-            bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
-        }
-        else if (data === 'admin_center') {
-            if (chatId !== ADMIN_ID) {
-                bot.answerCallbackQuery(query.id, { text: '❌ Bạn không có quyền truy cập!', show_alert: true });
-                return;
-            }
-
-            const totalUsers = Object.keys(users).length;
-            let totalBalance = 0;
-            let totalOrders = 0;
-            Object.values(users).forEach(usr => {
-                totalBalance += (usr.balance || 0);
-                if (usr.orders) totalOrders += usr.orders.length;
+            let text = `📇 *TRUNG TÂM KHÁCH HÀNG*\n👤 ${u.name} \vert{} 💰 ${u.balance.toLocaleString()}đ\n\n📦 *15 Đơn gần nhất:*\n`;
+            u.orders.slice().reverse().slice(0, 15).forEach(o => {
+                text += `• \`${o.id}\` - ${o.serviceName} (${o.status})\n`;
             });
-
-            let text = `🛡️ *TRUNG TÂM QUẢN LÝ ADMIN*\n--------------------------------------------------\n`;
-            text += `👥 Tổng khách hàng: \`${totalUsers}\`\n`;
-            text += `💰 Tổng số dư ví: \`${totalBalance.toLocaleString()} VNĐ\`\n`;
-            text += `📦 Tổng số đơn: \`${totalOrders}\`\n--------------------------------------------------\n`;
-            text += `👉 *Chọn khách hàng bên dưới để quản lý số dư:*`;
-
+            bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '◀ Trang chủ', callback_data: 'back_start' }]] } });
+        }
+        else if (data === 'admin_center' && chatId === ADMIN_ID) {
+            let text = `🛡️ *TRUNG TÂM QUẢN LÝ ADMIN*\nTổng khách hàng: \`${Object.keys(users).length}\`\n`;
             let kb = [];
-            const recentUserIds = Object.keys(users).slice(-10).reverse();
-            recentUserIds.forEach(uid => {
-                const usr = users[uid];
-                kb.push([{ text: `👤 ${usr.name} | 💰 ${(usr.balance || 0).toLocaleString()}đ`, callback_data: `admin_user_${uid}` }]);
+            Object.keys(users).slice(-10).reverse().forEach(uid => {
+                kb.push([{ text: `👤 ${users[uid].name} \vert{}${users[uid].balance}đ`, callback_data: `admin_user_${uid}` }]);
             });
-
-            kb.push([{ text: '🔄 Làm mới', callback_data: 'admin_center' }, { text: '◀ Quay lại Trang chủ', callback_data: 'back_start' }]);
+            kb.push([{ text: '◀ Trang chủ', callback_data: 'back_start' }]);
             bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
         }
-        else if (data.startsWith('admin_user_')) {
-            if (chatId !== ADMIN_ID) return;
+        else if (data.startsWith('admin_user_') && chatId === ADMIN_ID) {
             const targetId = data.replace('admin_user_', '');
-            const targetUser = users[targetId];
-
-            if (!targetUser) {
-                bot.answerCallbackQuery(query.id, { text: '❌ Khách hàng không tồn tại!', show_alert: true });
-                return;
-            }
-
-            let text = `👤 *QUẢN LÝ KHÁCH HÀNG*\n--------------------------------------------------\n`;
-            text += `📌 Tên: *${targetUser.name}*\n`;
-            text += `🆔 ID Telegram: \`${targetId}\`\n`;
-            text += `💰 Số dư ví: \`${(targetUser.balance || 0).toLocaleString()} VNĐ\`\n`;
-            text += `📦 Tổng đơn: \`${targetUser.orders ? targetUser.orders.length : 0}\`\n--------------------------------------------------\n`;
-
-            let kb = [
-                [{ text: '➕ Cộng / Nạp tiền', callback_data: `admin_add_${targetId}` }, { text: '➖ Trừ tiền', callback_data: `admin_sub_${targetId}` }],
-                [{ text: '◀ Quay lại danh sách Admin', callback_data: 'admin_center' }]
-            ];
-            bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
-        }
-        else if (data.startsWith('admin_add_')) {
-            if (chatId !== ADMIN_ID) return;
-            const targetId = data.replace('admin_add_', '');
-            const targetUser = users[targetId];
             adminSession[chatId] = { action: 'ADD', targetId: targetId };
-            bot.sendMessage(chatId, `➕ *CỘNG TIỀN CHO KHÁCH*\n👤 Khách: *${targetUser.name}*\n\n👉 *Nhập số tiền muốn cộng:* (VD: 50000)\n_(Gõ /cancel để hủy)_`, { parse_mode: 'Markdown' });
-        }
-        else if (data.startsWith('admin_sub_')) {
-            if (chatId !== ADMIN_ID) return;
-            const targetId = data.replace('admin_sub_', '');
-            const targetUser = users[targetId];
-            adminSession[chatId] = { action: 'SUB', targetId: targetId };
-            bot.sendMessage(chatId, `➖ *TRỪ TIỀN KHÁCH HÀNG*\n👤 Khách: *${targetUser.name}*\n\n👉 *Nhập số tiền muốn trừ:* (VD: 20000)\n_(Gõ /cancel để hủy)_`, { parse_mode: 'Markdown' });
-        }
-        else if (data === 'buy_code') {
-            let textMenu = `🎟️ *TRUNG TÂM MUA CODE & NHÀ CÁI*\n☕ Chào sếp *${u.name}*\n--------------------------------------------------\n`;
-            let kb = [];
-            Object.keys(u.linkedAccounts).forEach(brand => {
-                let count = u.linkedAccounts[brand].length;
-                textMenu += `• ${brand}: [ ${count} ]\n`;
-                kb.push([{ text: `▶ ${brand} (${count})`, callback_data: `page_${brand}` }]);
-            });
-            kb.push([{ text: '◀ Quay lại', callback_data: 'back_start' }]);
-            bot.editMessageText(textMenu, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
+            bot.sendMessage(chatId, `➕ Nhập số tiền muốn CỘNG cho khách hàng này: (Gõ /cancel để hủy)`);
         }
         else if (data === 'back_start') {
             if (u.actionState) delete u.actionState;
-            if (adminSession[chatId]) delete adminSession[chatId];
             saveDatabase();
             sendHomeMenu(chatId, u, (chatId === ADMIN_ID));
         }
-
         bot.answerCallbackQuery(query.id);
     });
 }
@@ -534,24 +353,29 @@ function startBot(token) {
         bot = new TelegramBot(token, { polling: true });
         setupBotLogic();
         console.log('🤖 Bot Telegram đã khởi động thành công!');
-        return true;
     } catch (e) {
-        console.error("❌ Lỗi khởi động bot:", e);
-        return false;
+        console.error('❌ Lỗi khởi động bot:', e);
     }
 }
 
+// ==========================================
+// 🌐 WEBSOCKET SERVER & PING HANDLING
+// ==========================================
 wss.on('connection', (ws) => {
-    masterWebSocket = ws;
-    console.log('🌐 Web Dashboard đã kết nối WebSocket thành công.');
-    ws.on('close', () => {
-        if (masterWebSocket === ws) masterWebSocket = null;
-        console.log('🔌 Web Dashboard đã ngắt kết nối WebSocket.');
+    console.log('🌐 Web Dashboard đã kết nối WebSocket.');
+    ws.on('message', (message) => {
+        try {
+            const data = JSON.parse(message);
+            if (data.action === 'PING') {
+                ws.send(JSON.stringify({ type: 'PONG' }));
+            }
+        } catch (e) {}
     });
+    ws.on('close', () => console.log('🔌 Web Dashboard ngắt kết nối.'));
 });
 
 server.listen(PORT, () => {
     loadDatabase();
     startBot(currentToken);
-    console.log(`🚀 Server, Web Dashboard & Bot Telegram đã chạy thành công trên cổng ${PORT}`);
+    console.log(`🚀 Master Control Panel chạy thành công trên cổng ${PORT}`);
 });
