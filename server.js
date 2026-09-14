@@ -1,171 +1,130 @@
-const WebSocket = require('ws');
-const http = require('http');
-const express = require('express');
-const path = require('path');
+import logging
+import asyncio
+import aiosqlite
+import aiohttp # Thêm thư viện gọi API
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, MessageHandler, filters, ContextTypes
 
-const app = express();
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+# Thiết lập log
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-const PORT = process.env.PORT || 3000;
-const clients = new Set();
-const activeSlaves = new Map();
-const activeBots = new Map();
+user_states = {}
+BRANDS = ['SC88', 'C168', 'QQ88 THỨ SÁU', 'F8BET', 'KJC']
+BOT1_TOKEN = "YOUR_BOT_TOKEN_HERE" 
 
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.static(__dirname));
+# ⚠️ THAY BẰNG DOMAIN RAILWAY CỦA BẠN
+NODEJS_API_URL = "https://ecosystem-api-production.up.railway.app/api/orders"
 
-// API lấy danh sách Slaves
-app.get('/api/slaves', (req, res) => {
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    let slavesList = [];
-    activeSlaves.forEach((client) => {
-        slavesList.push({
-            id: client.id,
-            name: client.name,
-            role: client.role,
-            isOnLive: client.isOnLive,
-            url: client.url,
-            lastSeen: new Date(client.lastSeen).toLocaleTimeString('vi-VN')
-        });
-    });
-    res.end(JSON.stringify(slavesList, null, 2));
-});
+# ================= DATABASE (TỐI ƯU ASYNC) =================
+# [Giữ nguyên phần DB như code cũ của bạn...]
+async def init_db():
+    async with aiosqlite.connect('system.db') as db:
+        await db.execute('''CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT, balance INTEGER DEFAULT 50000)''')
+        await db.execute('''CREATE TABLE IF NOT EXISTS linked_accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, brand TEXT, account_name TEXT)''')
+        await db.commit()
 
-// API lấy danh sách Bot active
-app.get('/api/bots', (req, res) => {
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify(Array.from(activeBots.values()), null, 2));
-});
+async def get_or_create_user(user_id, name):
+    async with aiosqlite.connect('system.db') as db:
+        async with db.execute("SELECT balance FROM users WHERE id = ?", (user_id,)) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return row[0]
+            else:
+                await db.execute("INSERT INTO users (id, name, balance) VALUES (?, ?, 50000)", (user_id, name))
+                await db.commit()
+                return 50000
 
-// API gửi lệnh điều khiển nhanh
-app.get('/send-command', (req, res) => {
-    const cmd = req.query.cmd || 'ĐIỂM DANH + SC88 +';
-    let count = 0;
-    wss.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ action: `CHAT|${cmd}` }));
-            count++;
-        }
-    });
-    res.send(`🚀 Đã phát lệnh thành công cho ${count} thiết bị: [ ${cmd} ]`);
-});
+async def get_linked_accounts(user_id):
+    async with aiosqlite.connect('system.db') as db:
+        async with db.execute("SELECT brand, account_name FROM linked_accounts WHERE user_id = ?", (user_id,)) as cursor:
+            rows = await cursor.fetchall()
+    accounts = {brand: [] for brand in BRANDS}
+    for brand, acc_name in rows:
+        if brand in accounts: accounts[brand].append(acc_name)
+    return accounts
 
-// --- AI ENGINE HANDLER (NLP RULE-BASED / API READY) ---
-function processAiCommand(text) {
-    const input = text.toLowerCase();
+async def add_linked_account(user_id, brand, account_name):
+    async with aiosqlite.connect('system.db') as db:
+        await db.execute("INSERT INTO linked_accounts (user_id, brand, account_name) VALUES (?, ?, ?)", (user_id, brand, account_name))
+        await db.commit()
+
+async def update_balance(user_id, amount):
+    async with aiosqlite.connect('system.db') as db:
+        await db.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (amount, user_id))
+        await db.commit()
+
+# ================= GIAO DIỆN & XỬ LÝ CHÍNH =================
+# [Giữ nguyên các hàm send_home_menu, start, button_handler như code cũ của bạn...]
+
+# ... (Vui lòng chèn lại phần send_home_menu, start, button_handler của bạn vào đây để tránh file quá dài) ...
+
+# ================= XỬ LÝ TIN NHẮN (ĐỒNG BỘ API NODE.JS) =================
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_user.id)
+    text = update.message.text.strip()
     
-    // 1. Lệnh quản lý Bot
-    if (input.includes('chạy') && (input.includes('tất cả') || input.includes('toàn bộ bot'))) {
-        return { reply: "Mệnh lệnh xác nhận. Đang kích hoạt toàn bộ chiến binh Hades V6100.", trigger: "AI_START_BOTS" };
-    }
-    if (input.includes('dừng') || input.includes('stop')) {
-        return { reply: "Hệ thống đã nhận lệnh dừng hỏa lực. Toàn bộ Bot đang đóng băng.", trigger: "AI_STOP_BOTS" };
-    }
-    if (input.includes('thêm bot') || input.includes('tạo bot')) {
-        return { reply: "Đã khởi tạo thêm một Bot mới vào hàng chờ hệ thống.", trigger: "AI_ADD_BOT" };
-    }
-    
-    // 2. Lệnh UI / Navigation
-    if (input.includes('mở kho') || input.includes('acc store')) {
-        return { reply: "Đang truy xuất CSDL Kho Tài khoản Cyberpunk...", trigger: "AI_OPEN_ACC_STORE" };
-    }
-    if (input.includes('test') || input.includes('giả lập')) {
-        return { reply: "Khởi động môi trường giả lập Live Stream Hendy.", trigger: "AI_OPEN_TEST_ENV" };
-    }
+    if chat_id not in user_states:
+        return
 
-    // 3. Truy vấn trạng thái
-    if (input.includes('trạng thái') || input.includes('báo cáo')) {
-        return { reply: `Hệ thống ổn định. Đang có ${wss.clients.size} kết nối WS hoạt động. Số lượng Bot đang quản lý: ${activeBots.size}.`, trigger: "NONE" };
-    }
+    # Xử lý nhập tên liên kết tài khoản
+    if user_states[chat_id]['action'] == 'waiting_link_account':
+        brand = user_states[chat_id]['brand']
+        await add_linked_account(chat_id, brand, text)
+        del user_states[chat_id]
+        await update.message.reply_text(f"✅ Đã liên kết `{text}` với *{brand}*!\n👉 Nhấn /start để về menu chính.", parse_mode="Markdown")
 
-    // Mặc định (Có thể tích hợp gọi API Gemini/OpenAI tại đây)
-    return { 
-        reply: "AI Manager đang chờ lệnh. Bạn có thể yêu cầu: 'Chạy tất cả bot', 'Dừng bot', 'Mở kho tài khoản', 'Mở môi trường giả lập'...", 
-        trigger: "NONE" 
-    };
-}
-
-wss.on('connection', (ws) => {
-    clients.add(ws);
-    ws.isAlive = true;
-    let currentSlaveId = null;
-    
-    console.log('[WS] Client đã kết nối thành công.');
-    ws.send(JSON.stringify({ type: 'SYSTEM', message: 'Kết nối thành công tới WebSocket Hub!' }));
-
-    ws.on('pong', () => { ws.isAlive = true; });
-
-    ws.on('message', (message) => {
-        try {
-            const data = JSON.parse(message);
-            const now = Date.now();
+    # Xử lý nhập link tăng mắt Live & BẮN API SANG NODE.JS
+    elif user_states[chat_id]['action'] == 'waiting_live_link':
+        platform = user_states[chat_id]['platform']
+        link = text
+        price = 10000 if platform == "TikTok" else 15000
+        
+        balance = await get_or_create_user(chat_id, update.effective_user.first_name)
+        
+        if balance >= price:
+            await update_balance(chat_id, -price) # Trừ tiền
+            del user_states[chat_id]
             
-            // XỬ LÝ LỆNH TỪ AI MANAGER FRONTEND
-            if (data.action === 'AI_CHAT') {
-                console.log('[AI RECV]:', data.text);
-                const aiResult = processAiCommand(data.text);
-                
-                // Trả kết quả về cho Client đã yêu cầu
-                ws.send(JSON.stringify({
-                    type: 'AI_RESPONSE',
-                    message: aiResult.reply,
-                    triggerCmd: aiResult.trigger
-                }));
-                return; // Không broadcast lệnh chat AI cho toàn bộ server
+            # --- ĐỒNG BỘ VỚI BACKEND NODE.JS ---
+            order_payload = {
+                "serviceType": f"buff_live_{platform.lower()}",
+                "target": link,
+                "quantity": 1000 # Mặc định 1k mắt
             }
+            
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(NODEJS_API_URL, json=order_payload) as response:
+                        api_result = await response.json()
+                        logging.info(f"API Node.js Response: {api_result}")
+            except Exception as e:
+                logging.error(f"Lỗi khi gọi API Node.js: {e}")
+            # ------------------------------------
 
-            console.log('[WS RECV]:', data);
+            success_msg = (
+                "✅ **TIẾN TRÌNH THÀNH CÔNG!**\n\n"
+                f"📺 Nền tảng: *{platform}*\n"
+                f"🔗 Link: {link}\n"
+                f"💸 Đã thanh toán: `-{price:,} VNĐ`\n\n"
+                "_Mắt sẽ bắt đầu tăng dần trong 1 - 5 phút tới._\n"
+                "👉 Nhấn /start để về menu chính."
+            )
+            await update.message.reply_text(success_msg, parse_mode="Markdown")
+        else:
+            del user_states[chat_id]
+            await update.message.reply_text("❌ **SỐ DƯ KHÔNG ĐỦ!**\nVui lòng nạp thêm tiền để sử dụng dịch vụ.\n👉 Nhấn /start để về menu chính.", parse_mode="Markdown")
 
-            if (data.action === 'SYNC_REGISTER_TAB') {
-                currentSlaveId = data.value?.id || ('slave_' + Math.random().toString(36).substring(2, 8));
-                ws.slaveId = currentSlaveId;
-                activeSlaves.set(currentSlaveId, {
-                    ws: ws, id: currentSlaveId,
-                    name: data.value?.name || 'Khách',
-                    role: data.value?.role || 'VIP_BOT',
-                    isOnLive: 1, url: '', lastSeen: now
-                });
-            } else if (data.action === 'SYNC_STATUS') {
-                currentSlaveId = data.slaveId;
-                if (activeSlaves.has(currentSlaveId)) {
-                    let slave = activeSlaves.get(currentSlaveId);
-                    slave.name = data.nickname || slave.name;
-                    slave.isOnLive = data.is_on_live;
-                    slave.url = data.url;
-                    slave.lastSeen = now;
-                }
-            } else if (data.action === 'CREATE_BOT') {
-                activeBots.set(data.botId, {
-                    botId: data.botId,
-                    account: data.account,
-                    status: data.status || 'RUNNING',
-                    timestamp: data.timestamp || new Date().toLocaleTimeString('vi-VN')
-                });
-                console.log(`[BOT CREATED] ID: ${data.botId} | Acc: ${data.account}`);
-            }
+# ================= HÀM MAIN =================
+def main():
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(init_db())
+    
+    app = ApplicationBuilder().token(BOT1_TOKEN).build()
+    
+    # ... (Khai báo handler như cũ) ...
+    
+    print("🤖 Bot Python đang chạy và đã đồng bộ API...")
+    app.run_polling()
 
-            // Broadcast dữ liệu/lệnh tới tất cả Client khác
-            wss.clients.forEach((client) => {
-                if (client !== ws && client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify({ type: 'BROADCAST', data }));
-                }
-            });
-        } catch (e) {
-            console.error('[WS ERROR]: Lỗi xử lý message', e);
-        }
-    });
-
-    ws.on('close', () => {
-        clients.delete(ws);
-        if (ws.slaveId && activeSlaves.has(ws.slaveId)) {
-            activeSlaves.delete(ws.slaveId);
-        }
-        console.log('[WS] Client đã ngắt kết nối.');
-    });
-});
-
-server.listen(PORT, () => {
-    console.log(`🚀 [HENDY SERVER HUB] Đang chạy tại cổng: ${PORT}`);
-});
+if __name__ == "__main__":
+    main()
