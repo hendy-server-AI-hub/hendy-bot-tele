@@ -163,7 +163,7 @@ function saveDatabase() {
 }
 
 function getSystemStatusText() {
-    let report = `📡 *HENDY SYSTEM MONITOR*\n🕒 ${new Date().toLocaleTimeString('vi-VN')}\n--------------------------\n`;
+    let report = `📡 *HỆ THỐNG DỊCH VỤ MXH MONITOR*\n🕒 ${new Date().toLocaleTimeString('vi-VN')}\n--------------------------\n`;
     Object.keys(brandStatuses).forEach(brand => {
         const b = brandStatuses[brand];
         report += `• *${brand}:* ${b.status} (${b.ping}ms)\n`;
@@ -180,7 +180,7 @@ function generateOrderId() {
 // ==========================================
 function sendHomeMenu(chatId, u, isAdmin) {
     const welcomeMessage = `
-🤖 *HENDY CYBERTECH PRO v2026* 🚀
+🤖 *HỆ THỐNG DỊCH VỤ MXH PRO* 🚀
 Chào mừng sếp, *${u.name}*
 --------------------------------------------------
 💎 *Phân quyền:* ${isAdmin ? '👑 ADMIN TỐI CAO' : '👤 KHÁCH HÀNG'}
@@ -190,7 +190,7 @@ Chào mừng sếp, *${u.name}*
     `;
 
     const inlineKeyboard = [
-        [{ text: '🌐 DỊCH VỤ MXH', callback_data: 'smm_main' }],
+        [{ text: '🌐 DỊCH VỤ MẠNG XÃ HỘI', callback_data: 'smm_main' }],
         [{ text: '🎟️ TRUNG TÂM MUA CODE', callback_data: 'buy_code' }],
         [{ text: '💳 NẠP TIỀN', callback_data: 'deposit' }, { text: '📇 TRUNG TÂM KHÁCH HÀNG', callback_data: 'customer_center' }],
         [{ text: '👥 NHÓM HỖ TRỢ', url: 'https://t.me/Hendy_Support_Group' }]
@@ -227,7 +227,7 @@ function setupBotLogic() {
         sendHomeMenu(chatId, users[chatId], isAdmin);
     });
 
-    // --- LỆNH ADMIN DUYỆT ĐƠN: /done ORDxxxxx ---
+    // --- LỆNH ADMIN DUYỆT ĐƠN: /done [Mã đơn] ---
     bot.onText(/\/done (.+)/, (msg, match) => {
         const chatId = msg.chat.id.toString();
         if (chatId !== ADMIN_ID) {
@@ -245,11 +245,10 @@ function setupBotLogic() {
                         o.status = '✅ Đã hoàn thành';
                         found = true;
                         
-                        // Gửi thông báo hoàn thành đơn về cho khách hàng
                         try {
                             bot.sendMessage(
                                 uid, 
-                                `🎉 *ĐƠN HÀNG ĐÃ HOÀN TẤT!* 🎉\n\n` +
+                                `🎉 *ĐƠN HÀNG ĐÃ HOÀN TẤT!*\n\n` +
                                 `🏷️ Mã đơn: \`${o.id}\`\n` +
                                 `📌 Dịch vụ: ${o.serviceName}\n` +
                                 `🔗 Link: ${o.link}\n` +
@@ -266,7 +265,7 @@ function setupBotLogic() {
         saveDatabase();
 
         if (found) {
-            bot.sendMessage(chatId, `✅ Đã duyệt và cập nhật đơn hàng *${orderIdToFind}* sang trạng thái HOÀN THÀNH.`);
+            bot.sendMessage(chatId, `✅ Đã duyệt và chuyển đơn hàng *${orderIdToFind}* sang trạng thái HOÀN THÀNH.`);
         } else {
             bot.sendMessage(chatId, `❌ Không tìm thấy mã đơn hàng: *${orderIdToFind}*`);
         }
@@ -359,28 +358,20 @@ function setupBotLogic() {
             try {
                 bot.sendMessage(
                     ADMIN_ID, 
-                    `🔔 *CÓ ĐƠN DỊCH VỤ MXH MỚI*\n` +
-                    `👤 Khách: ${u.name} (ID: \`${chatId}\`)\n` +
-                    `🏷️ Mã Đơn: \`${newOrderId}\`\n` +
-                    `📌 Dịch vụ: ${orderDetail.serviceName}\n` +
-                    `🔗 Link: ${orderDetail.link}\n` +
-                    `📊 SL: ${quantity.toLocaleString()}\n` +
-                    `💵 Tổng thu: ${totalCost.toLocaleString()} VNĐ\n\n` +
-                    `👉 Lệnh hoàn tất: \`/done ${newOrderId}\``, 
+                    `🔔 *CÓ ĐƠN SMM MỚI*\n👤 Khách: ${u.name} (ID: \`${chatId}\`)\n🏷️ Mã Đơn: ${newOrderId}\n📌 Dịch vụ: ${orderDetail.serviceName}\n🔗 Link: ${orderDetail.link}\n📊 SL: ${quantity}\n💵 Tổng thu: ${totalCost.toLocaleString()} VNĐ\n\n_💡 Gõ /done ${newOrderId} để duyệt đơn._`, 
                     { parse_mode: 'Markdown' }
                 );
             } catch (e) {}
         }
     });
 
-    // --- LẮNG NGHE BẤM NÚT (CALLBACK QUERY) ---
+    // --- LẮNG NGHE BẤM NÚT ---
     bot.on('callback_query', (query) => {
         const chatId = query.from.id.toString();
         const data = query.data;
         const u = users[chatId];
         if (!u) return;
 
-        // 1. Menu Dịch vụ MXH chính
         if (data === 'smm_main') {
             let text = `🌐 *DANH MỤC DỊCH VỤ MXH*\nVui lòng chọn nền tảng bạn muốn sử dụng:\n--------------------------------------------------\n`;
             let kb = [];
@@ -390,7 +381,6 @@ function setupBotLogic() {
             kb.push([{ text: '◀ Quay lại Trang chủ', callback_data: 'back_start' }]);
             bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
         }
-        // 2. Chi tiết từng nền tảng
         else if (data.startsWith('smm_cat_')) {
             const catKey = data.replace('smm_cat_', '');
             const category = SMM_SERVICES[catKey];
@@ -405,7 +395,6 @@ function setupBotLogic() {
                 bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
             }
         }
-        // 3. Khởi tạo chọn mua dịch vụ cụ thể
         else if (data.startsWith('order_')) {
             const parts = data.split('_');
             const catKey = parts[1];
@@ -426,23 +415,22 @@ function setupBotLogic() {
                 );
             }
         }
-        // 4. Trung tâm khách hàng (Hiển thị đơn hàng đang xử lý & hoàn thành)
         else if (data === 'customer_center') {
             if (!u.orders) u.orders = [];
             
             let text = `📇 *TRUNG TÂM KHÁCH HÀNG*\n👤 Xin chào sếp: *${u.name}*\n💰 Số dư ví: \`${u.balance.toLocaleString()} VNĐ\`\n--------------------------------------------------\n`;
-            text += `📦 *DANH SÁCH ĐƠN HÀNG CỦA BẠN:*\n\n`;
+            text += `📦 *DANH SÁCH ĐƠN HÀNG:*\n\n`;
 
-            const displayOrders = [...u.orders].reverse().slice(0, 15);
+            const userOrders = u.orders.slice().reverse().slice(0, 15);
 
-            if (displayOrders.length === 0) {
-                text += `_Hiện tại bạn chưa có lịch sử đơn hàng nào._\n`;
+            if (userOrders.length === 0) {
+                text += `_Hiện tại bạn chưa có đơn hàng nào._\n`;
             } else {
-                displayOrders.forEach((o) => {
+                userOrders.forEach((o) => {
                     text += `🏷️ *Mã đơn:* \`${o.id}\`\n`;
                     text += `📌 *Dịch vụ:* ${o.serviceName}\n`;
                     text += `🔗 *Link:* ${o.link}\n`;
-                    text += `📊 *Số lượng:* ${o.quantity.toLocaleString()} | 💸 \`${o.totalCost.toLocaleString()} VNĐ\`\n`;
+                    text += `📊 *SL:* ${o.quantity.toLocaleString()} | 💸 \`${o.totalCost.toLocaleString()} VNĐ\`\n`;
                     text += `⏰ *Lúc:* ${o.date}\n`;
                     text += `🔄 *Trạng thái:* ${o.status}\n`;
                     text += `—\n`;
@@ -455,7 +443,6 @@ function setupBotLogic() {
             
             bot.editMessageText(text, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
         }
-        // 5. Trung tâm mua code
         else if (data === 'buy_code') {
             let textMenu = `🎟️ *TRUNG TÂM MUA CODE & NHÀ CÁI*\n☕ Chào sếp *${u.name}*\n--------------------------------------------------\n`;
             let kb = [];
@@ -467,7 +454,6 @@ function setupBotLogic() {
             kb.push([{ text: '◀ Quay lại', callback_data: 'back_start' }]);
             bot.editMessageText(textMenu, { chat_id: chatId, message_id: query.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
         }
-        // 6. Quay lại trang chủ
         else if (data === 'back_start') {
             if (u.actionState) {
                 delete u.actionState;
@@ -488,7 +474,7 @@ function startBot(token) {
     try {
         bot = new TelegramBot(token, { polling: true });
         setupBotLogic();
-        console.log('🤖 Bot Telegram (Server) đã khởi động thành công!');
+        console.log('🤖 Bot Dịch Vụ MXH đã khởi động thành công!');
 
         setInterval(() => {
             try {
@@ -532,4 +518,4 @@ wss.on('connection', (ws) => {
 // Khởi chạy hệ thống
 loadDatabase();
 startBot(currentToken);
-console.log(`🚀 WebSocket Server & Bot đã chạy thành công trên cổng ${WS_PORT}!`);
+console.log(`🚀 WebSocket Server & Bot Dịch Vụ MXH đã chạy thành công trên cổng ${WS_PORT}!`);
