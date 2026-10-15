@@ -184,7 +184,7 @@ async function handleUpdate(update, env, BOT_TOKEN) {
         const chatId = msg.chat.id.toString();
         const u = getUser(chatId, msg.from?.first_name);
 
-        // A. Xử lý Video (Chuyển tiếp qua Server Vệ Tinh Python - Vietsub & Hardsub)
+        // A. Xử lý Video (Chuyển tiếp qua Server Vệ Tinh Python cho tính năng Vietsub Hardsub)[cite: 3]
         if (msg.video) {
             const fileSize = msg.video.file_size || 0;
             if (fileSize > 20000000) {
@@ -199,7 +199,7 @@ async function handleUpdate(update, env, BOT_TOKEN) {
             }
 
             u.balance -= pricePerVideo;
-            await sendMessage(BOT_TOKEN, chatId, '⏳ *Đã tiếp nhận Video!*\nHệ thống đang chuyển dữ liệu sang Cụm Máy Chủ AI Python để render phụ đề cứng (Hardsub). Vui lòng chờ kết quả...');
+            await sendMessage(BOT_TOKEN, chatId, '⏳ *Đã tiếp nhận Video!*\nHệ thống đang chuyển dữ liệu sang Cụm Máy Chủ AI Python để tạo Vietsub. Vui lòng chờ kết quả...');
 
             try {
                 const fileRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${msg.video.file_id}`);
@@ -207,7 +207,7 @@ async function handleUpdate(update, env, BOT_TOKEN) {
                 
                 if (fileData.ok) {
                     const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.result.file_path}`;
-                    const PYTHON_SERVER_URL = 'https://app-python-cua-ban.onrender.com/api/vietsub'; // Thay link Server Python của bạn vào đây
+                    const PYTHON_SERVER_URL = 'https://app-python-cua-ban.onrender.com/api/vietsub'; // Thay link Render của bạn vào đây
                     
                     fetch(PYTHON_SERVER_URL, {
                         method: 'POST',
@@ -222,7 +222,7 @@ async function handleUpdate(update, env, BOT_TOKEN) {
             return;
         }
 
-        // B. Xử lý Hình ảnh (Dịch văn bản qua OpenAI Vision API)
+        // B. Xử lý Hình ảnh (Dịch văn bản trong ảnh qua OpenAI Vision API)
         if (msg.photo) {
             const photo = msg.photo[msg.photo.length - 1];
             await sendMessage(BOT_TOKEN, chatId, '🖼️ *Đang phân tích và dịch nội dung hình ảnh qua AI...*');
@@ -273,7 +273,7 @@ async function handleUpdate(update, env, BOT_TOKEN) {
             return;
         }
 
-        // C. Lệnh Dịch Văn Bản (/dich <nội dung>)
+        // C. Lệnh Dịch Văn Bản Trực Tiếp (/dich <nội dung>)
         if (text.startsWith('/dich ')) {
             const textToTranslate = text.replace('/dich ', '');
             await sendMessage(BOT_TOKEN, chatId, '🌐 *AI đang dịch văn bản...*');
