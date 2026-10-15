@@ -1,17 +1,50 @@
 export default {
     async fetch(request, env, ctx) {
         const url = new URL(request.url);
+        const BOT_TOKEN = env.BOT_TOKEN || '8574999116:AAF39jSNBiOx-RqIFF08oLxHXqyxsQ9mYqw';
 
-        if (request.method === 'GET' && url.pathname === '/') {
-            return new Response('Server Hendy & Hades V6100 Cloudflare Worker đang hoạt động.', {
-                headers: { 'Content-Type': 'text/html; charset=utf-8' }
-            });
+        // ==========================================
+        // 🔧 ĐƯỜNG DẪN TỰ ĐỘNG CÀI ĐẶT WEBHOOK (/setup)
+        // ==========================================
+        if (request.method === 'GET' && url.pathname === '/setup') {
+            // Tự động lấy tên miền hiện tại của Cloudflare
+            const webhookUrl = `https://${url.host}/telegram-webhook`;
+            const telegramApiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/setWebhook?url=${webhookUrl}`;
+            
+            try {
+                const response = await fetch(telegramApiUrl);
+                const result = await response.json();
+                
+                return new Response(JSON.stringify({
+                    status: "Thực thi cài đặt Webhook",
+                    domain_detected: webhookUrl,
+                    telegram_response: result
+                }, null, 2), {
+                    headers: { 'Content-Type': 'application/json; charset=utf-8' }
+                });
+            } catch (err) {
+                return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+            }
         }
 
+        // ==========================================
+        // 🌐 TRANG CHỦ (Kiểm tra server sống)
+        // ==========================================
+        if (request.method === 'GET' && url.pathname === '/') {
+            return new Response(
+                '<h2>Server Hendy & Hades V6100 Cloudflare Worker đang hoạt động.</h2>' +
+                '<p>👉 Truy cập vào đường dẫn <b><a href="/setup">/setup</a></b> để tự động cài đặt Telegram Webhook.</p>', 
+                { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+            );
+        }
+
+        // ==========================================
+        // 🤖 ĐIỂM NHẬN WEBHOOK TỪ TELEGRAM (/telegram-webhook)
+        // ==========================================
         if (request.method === 'POST' && url.pathname === '/telegram-webhook') {
             try {
                 const update = await request.json();
-                await handleUpdate(update, env);
+                await handleUpdate(update, env, BOT_TOKEN);
                 return new Response('OK', { status: 200 });
             } catch (err) {
                 console.error('Lỗi xử lý Webhook:', err);
@@ -70,8 +103,7 @@ function getUser(chatId, firstName) {
 // ==========================================
 // 🤖 XỬ LÝ SỰ KIỆN TELEGRAM WEBHOOK
 // ==========================================
-async function handleUpdate(update, env) {
-    const BOT_TOKEN = env.BOT_TOKEN || '8574999116:AAF39jSNBiOx-RqIFF08oLxHXqyxsQ9mYqw';
+async function handleUpdate(update, env, BOT_TOKEN) {
     const ADMIN_ID = env.ADMIN_ID || '6138197737';
 
     // 1. Xử lý Callback Query (Button click)
@@ -164,14 +196,12 @@ async function handleUpdate(update, env) {
             await sendMessage(BOT_TOKEN, chatId, '⏳ *Đang xử lý Video qua OpenAI Whisper AI...*\nVui lòng chờ trong giây lát!');
 
             try {
-                // Tải URL file từ Telegram API
                 const fileRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${msg.video.file_id}`);
                 const fileData = await fileRes.json();
                 
                 if (fileData.ok) {
                     const downloadUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.result.file_path}`;
                     
-                    // Gọi API OpenAI Whisper
                     const mediaRes = await fetch(downloadUrl);
                     const mediaBlob = await mediaRes.blob();
                     
