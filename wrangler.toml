@@ -1,0 +1,8 @@
+name = "hendy-bot-worker"
+main = "worker.js"
+compatibility_date = "2026-10-15"
+
+# (Tùy chọn) Khai báo các biến môi trường tại đây, hoặc cài đặt trên giao diện Cloudflare
+[vars]
+# BOT_TOKEN = "điền_token_của_bạn"
+# ADMIN_ID = "điền_id_admin"
