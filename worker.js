@@ -184,7 +184,7 @@ async function handleUpdate(update, env, BOT_TOKEN) {
         const chatId = msg.chat.id.toString();
         const u = getUser(chatId, msg.from?.first_name);
 
-        // Xử lý Video (Chuyển tiếp qua Server Vệ Tinh Python - Faster-Whisper + FFmpeg)
+        // A. Xử lý Video (Chuyển tiếp qua Server Vệ Tinh Python - Vietsub & Hardsub)
         if (msg.video) {
             const fileSize = msg.video.file_size || 0;
             if (fileSize > 20000000) {
@@ -198,33 +198,69 @@ async function handleUpdate(update, env, BOT_TOKEN) {
                 return;
             }
 
-            // Trừ tiền trước
             u.balance -= pricePerVideo;
-            await sendMessage(BOT_TOKEN, chatId, '⏳ *Đã tiếp nhận Video!*\nHệ thống đang chuyển dữ liệu sang Cụm Máy Chủ AI Python. Vui lòng chờ kết quả...');
+            await sendMessage(BOT_TOKEN, chatId, '⏳ *Đã tiếp nhận Video!*\nHệ thống đang chuyển dữ liệu sang Cụm Máy Chủ AI Python để render phụ đề cứng (Hardsub). Vui lòng chờ kết quả...');
 
             try {
-                // 1. Lấy URL tải file trực tiếp từ Telegram
                 const fileRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${msg.video.file_id}`);
                 const fileData = await fileRes.json();
                 
                 if (fileData.ok) {
                     const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.result.file_path}`;
-                    
-                    // 2. Bắn tín hiệu sang Server Python (Render/VPS)
-                    const PYTHON_SERVER_URL = 'https://app-python-cua-ban.onrender.com/api/vietsub';
+                    const PYTHON_SERVER_URL = 'https://app-python-cua-ban.onrender.com/api/vietsub'; // Thay link Server Python của bạn vào đây
                     
                     fetch(PYTHON_SERVER_URL, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            chat_id: chatId,
-                            file_url: fileUrl
-                        })
+                        body: JSON.stringify({ chat_id: chatId, file_url: fileUrl })
                     }).catch(err => console.error("Lỗi gọi Python API:", err));
                 }
             } catch (e) {
-                u.balance += pricePerVideo; // Hoàn tiền nếu lỗi
+                u.balance += pricePerVideo; 
                 await sendMessage(BOT_TOKEN, chatId, `❌ *Lỗi hệ thống:* Không kết nối được với Máy chủ AI. Đã hoàn lại 5.000 VNĐ vào ví.`);
+            }
+            return;
+        }
+
+        // B. Xử lý Hình ảnh (Dịch văn bản qua OpenAI Vision API)
+        if (msg.photo) {
+            const photo = msg.photo[msg.photo.length - 1];
+            await sendMessage(BOT_TOKEN, chatId, '🖼️ *Đang phân tích và dịch nội dung hình ảnh qua AI...*');
+
+            try {
+                const fileRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${photo.file_id}`);
+                const fileData = await fileRes.json();
+                
+                if (fileData.ok) {
+                    const imageUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.result.file_path}`;
+                    
+                    const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${env.OPENAI_API_KEY}`
+                        },
+                        body: JSON.stringify({
+                            model: "gpt-4o-mini",
+                            messages: [
+                                {
+                                    role: "user",
+                                    content: [
+                                        { type: "text", text: "Hãy trích xuất toàn bộ văn bản có trong ảnh này và dịch sang Tiếng Việt chuẩn xác nhất." },
+                                        { type: "image_url", image_url: { url: imageUrl } }
+                                    ]
+                                }
+                            ],
+                            max_tokens: 1000
+                        })
+                    });
+
+                    const aiData = await aiRes.json();
+                    const translatedText = aiData.choices?.[0]?.message?.content || "Không thể dịch được hình ảnh này.";
+                    await sendMessage(BOT_TOKEN, chatId, `🌐 *KẾT QUẢ DỊCH HÌNH ẢNH AI:*\n\n${translatedText}`);
+                }
+            } catch (err) {
+                await sendMessage(BOT_TOKEN, chatId, `❌ Lỗi xử lý hình ảnh: ${err.message}`);
             }
             return;
         }
@@ -237,7 +273,36 @@ async function handleUpdate(update, env, BOT_TOKEN) {
             return;
         }
 
-        // Broadcast từ Admin
+        // C. Lệnh Dịch Văn Bản (/dich <nội dung>)
+        if (text.startsWith('/dich ')) {
+            const textToTranslate = text.replace('/dich ', '');
+            await sendMessage(BOT_TOKEN, chatId, '🌐 *AI đang dịch văn bản...*');
+
+            try {
+                const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${env.OPENAI_API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: "gpt-4o-mini",
+                        messages: [
+                            { role: "system", content: "Bạn là một biên dịch viên chuyên nghiệp. Hãy dịch đoạn văn bản sau sang Tiếng Việt chuẩn xác nhất." },
+                            { role: "user", content: textToTranslate }
+                        ]
+                    })
+                });
+                const aiData = await aiRes.json();
+                const result = aiData.choices?.[0]?.message?.content || "Lỗi dịch.";
+                await sendMessage(BOT_TOKEN, chatId, `📖 *Bản dịch:* \n\n${result}`);
+            } catch (e) {
+                await sendMessage(BOT_TOKEN, chatId, '❌ Lỗi hệ thống dịch thuật.');
+            }
+            return;
+        }
+
+        // D. Broadcast từ Admin (/tb <nội dung>)
         if (chatId === ADMIN_ID && text.startsWith('/tb ')) {
             const broadcastMsg = text.replace('/tb ', '');
             let count = 0;
@@ -249,7 +314,7 @@ async function handleUpdate(update, env, BOT_TOKEN) {
             return;
         }
 
-        // Nhập Giftcode
+        // E. Nhập Giftcode (/giftcode <mã>)
         if (text.startsWith('/giftcode ')) {
             const codeStr = text.split(' ')[1]?.toUpperCase();
             const codeData = memoryDb.giftcodes[codeStr];
@@ -262,7 +327,7 @@ async function handleUpdate(update, env, BOT_TOKEN) {
             return sendMessage(BOT_TOKEN, chatId, `🎁 *NHẬP MÃ THÀNH CÔNG!*\n💰 + \`${codeData.value.toLocaleString()} VNĐ\`\n💎 Số dư mới: \`${u.balance.toLocaleString()} VNĐ\``);
         }
 
-        // Tạo đơn SMM
+        // F. Tạo đơn SMM (Link & Số lượng)
         if (u.actionState && u.actionState.step === 'WAITING_LINK') {
             u.actionState.link = text;
             u.actionState.step = 'WAITING_QUANTITY';
@@ -285,6 +350,33 @@ async function handleUpdate(update, env, BOT_TOKEN) {
             delete u.actionState;
 
             await sendMessage(BOT_TOKEN, chatId, `✅ *TẠO ĐƠN THÀNH CÔNG!*\nMã đơn: *${orderId}*\nLink: ${text}\nSL:${quantity.toLocaleString()} | Trừ ví: \`-${totalCost.toLocaleString()} VNĐ\``);
+            return;
+        }
+
+        // G. Trợ lý AI Chat thông minh tư vấn tự động (Mặc định khi nhắn văn bản)
+        if (!text.startsWith('/')) {
+            await sendMessage(BOT_TOKEN, chatId, '💭 *Trợ lý AI đang suy nghĩ...*');
+            try {
+                const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${env.OPENAI_API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: "gpt-4o-mini",
+                        messages: [
+                            { role: "system", content: "Bạn là Trợ lý ảo thông minh của hệ thống Hendy & Hades SMM & Vietsub Pro. Hãy hỗ trợ tư vấn các dịch vụ mạng xã hội, mua code, và dịch thuật lịch sự, ngắn gọn." },
+                            { role: "user", content: text }
+                        ]
+                    })
+                });
+                const aiData = await aiRes.json();
+                const reply = aiData.choices?.[0]?.message?.content || "Xin chào, tôi có thể giúp gì cho bạn?";
+                await sendMessage(BOT_TOKEN, chatId, `🤖 *Trợ lý AI:* \n\n${reply}`);
+            } catch (e) {
+                await sendMessage(BOT_TOKEN, chatId, '❌ Trợ lý AI đang bận, vui lòng thử lại sau.');
+            }
             return;
         }
     }
