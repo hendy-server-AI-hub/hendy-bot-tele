@@ -71,7 +71,7 @@ function getUser(chatId, firstName) {
 // 🤖 XỬ LÝ SỰ KIỆN TELEGRAM WEBHOOK
 // ==========================================
 async function handleUpdate(update, env) {
-    const BOT_TOKEN = env.BOT_TOKEN || '8689114890:AAFBFM0rNtZWpOtAovIPHPVQTJVp0odU1DQ';
+    const BOT_TOKEN = env.BOT_TOKEN || '8574999116:AAF39jSNBiOx-RqIFF08oLxHXqyxsQ9mYqw';
     const ADMIN_ID = env.ADMIN_ID || '6138197737';
 
     // 1. Xử lý Callback Query (Button click)
