@@ -12,7 +12,7 @@ import threading
 app = Flask(__name__)
 translator = Translator()
 
-# LẤY BIẾN MÔI TRƯỜNG
+# LẤY BIẾN MÔI TRƯỜNG HOẶC CẤU HÌNH TRỰC TIẾP
 API_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '8574999116:AAF39jSNBiOx-RqIFF08oLxHXqyxsQ9mYqw')
 bot = telebot.TeleBot(API_TOKEN)
 
@@ -35,9 +35,9 @@ def process_video_task(chat_id, file_url):
     video_hoanchinh = f"video_{chat_id}_hoanchinh.mp4"
 
     try:
-        msg_status = bot.send_message(chat_id, "⏳ Đang tải video xuống cụm xử lý AI...")
+        msg_status = bot.send_message(chat_id, "⏳ Đang tải video xuống cụm xử lý AI Vietsub...")
         
-        # 1. Tải video từ Telegram về server
+        # 1. Tải video từ URL Telegram về server
         response = requests.get(file_url)
         with open(video_goc, 'wb') as f:
             f.write(response.content)
@@ -61,7 +61,7 @@ def process_video_task(chat_id, file_url):
                 pass
         subs.save(srt_vietsub, encoding='utf-8')
 
-        # 4. Gắn phụ đề cứng (Hardsub) vào video bằng FFmpeg[cite: 3, 4]
+        # 4. Gắn phụ đề cứng (Hardsub) vào video bằng FFmpeg
         bot.edit_message_text("🎬 Đang render và gắn phụ đề vào video (Quá trình này mất vài phút)...", chat_id, msg_status.message_id)
         subprocess.run([
             'ffmpeg', '-y', '-i', video_goc, 
@@ -95,7 +95,7 @@ def vietsub_api():
     if not chat_id or not file_url:
         return jsonify({"error": "Thiếu dữ liệu chat_id hoặc file_url"}), 400
 
-    # Chạy ngầm đa luồng để trả phản hồi 200 OK ngay cho Cloudflare
+    # Chạy ngầm đa luồng để trả phản hồi 200 OK ngay cho Cloudflare Worker
     threading.Thread(target=process_video_task, args=(chat_id, file_url)).start()
     return jsonify({"status": "processing"}), 200
 
