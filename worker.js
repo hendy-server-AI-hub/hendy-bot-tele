@@ -7,7 +7,6 @@ export default {
         // 🔧 ĐƯỜNG DẪN TỰ ĐỘNG CÀI ĐẶT WEBHOOK (/setup)
         // ==========================================
         if (request.method === 'GET' && url.pathname === '/setup') {
-            // Tự động lấy tên miền hiện tại của Cloudflare
             const webhookUrl = `https://${url.host}/telegram-webhook`;
             const telegramApiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/setWebhook?url=${webhookUrl}`;
             
@@ -185,47 +184,47 @@ async function handleUpdate(update, env, BOT_TOKEN) {
         const chatId = msg.chat.id.toString();
         const u = getUser(chatId, msg.from?.first_name);
 
-        // Xử lý Video (AI Vietsub qua OpenAI API)
+        // Xử lý Video (Chuyển tiếp qua Server Vệ Tinh Python - Faster-Whisper + FFmpeg)
         if (msg.video) {
+            const fileSize = msg.video.file_size || 0;
+            if (fileSize > 20000000) {
+                await sendMessage(BOT_TOKEN, chatId, '❌ File Video quá lớn. Vui lòng gửi video dưới 20MB!');
+                return;
+            }
+
             const pricePerVideo = 5000;
             if (u.balance < pricePerVideo) {
                 await sendMessage(BOT_TOKEN, chatId, `❌ Bạn cần tối thiểu \`${pricePerVideo.toLocaleString()} VNĐ\` để dùng dịch vụ AI Vietsub Video.`);
                 return;
             }
+
+            // Trừ tiền trước
             u.balance -= pricePerVideo;
-            await sendMessage(BOT_TOKEN, chatId, '⏳ *Đang xử lý Video qua OpenAI Whisper AI...*\nVui lòng chờ trong giây lát!');
+            await sendMessage(BOT_TOKEN, chatId, '⏳ *Đã tiếp nhận Video!*\nHệ thống đang chuyển dữ liệu sang Cụm Máy Chủ AI Python. Vui lòng chờ kết quả...');
 
             try {
+                // 1. Lấy URL tải file trực tiếp từ Telegram
                 const fileRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${msg.video.file_id}`);
                 const fileData = await fileRes.json();
                 
                 if (fileData.ok) {
-                    const downloadUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.result.file_path}`;
+                    const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.result.file_path}`;
                     
-                    const mediaRes = await fetch(downloadUrl);
-                    const mediaBlob = await mediaRes.blob();
+                    // 2. Bắn tín hiệu sang Server Python (Render/VPS)
+                    const PYTHON_SERVER_URL = 'https://app-python-cua-ban.onrender.com/api/vietsub';
                     
-                    const formData = new FormData();
-                    formData.append('file', mediaBlob, 'video.mp4');
-                    formData.append('model', 'whisper-1');
-                    formData.append('response_format', 'srt');
-
-                    const aiRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                    fetch(PYTHON_SERVER_URL, {
                         method: 'POST',
-                        headers: { 'Authorization': `Bearer ${env.OPENAI_API_KEY}` },
-                        body: formData
-                    });
-
-                    if (aiRes.ok) {
-                        const srtText = await aiRes.text();
-                        await sendDocument(BOT_TOKEN, chatId, srtText, 'subtitles.srt', `🎉 *VIETSUB HOÀN TẤT!*\n💰 Trừ ví: \`-${pricePerVideo.toLocaleString()} VNĐ\`\n💎 Số dư: \`${u.balance.toLocaleString()} VNĐ\``);
-                    } else {
-                        throw new Error('Lỗi từ API OpenAI');
-                    }
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            chat_id: chatId,
+                            file_url: fileUrl
+                        })
+                    }).catch(err => console.error("Lỗi gọi Python API:", err));
                 }
             } catch (e) {
-                u.balance += pricePerVideo; // Hoàn tiền
-                await sendMessage(BOT_TOKEN, chatId, `❌ *Lỗi xử lý AI:* ${e.message}. Hệ thống đã hoàn lại 5.000 VNĐ vào ví.`);
+                u.balance += pricePerVideo; // Hoàn tiền nếu lỗi
+                await sendMessage(BOT_TOKEN, chatId, `❌ *Lỗi hệ thống:* Không kết nối được với Máy chủ AI. Đã hoàn lại 5.000 VNĐ vào ví.`);
             }
             return;
         }
@@ -329,18 +328,5 @@ async function answerCallback(token, queryId, text = '') {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ callback_query_id: queryId, text, show_alert: !!text })
-    });
-}
-
-async function sendDocument(token, chatId, fileContent, fileName, caption) {
-    const formData = new FormData();
-    formData.append('chat_id', chatId);
-    formData.append('caption', caption);
-    formData.append('parse_mode', 'Markdown');
-    formData.append('document', new Blob([fileContent], { type: 'text/plain' }), fileName);
-
-    await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
-        method: 'POST',
-        body: formData
     });
 }
