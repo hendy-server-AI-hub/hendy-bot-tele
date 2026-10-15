@@ -8,7 +8,7 @@ const fs = require('fs');
 const cors = require('cors');
 
 const PORT = process.env.PORT || 8080;
-const BOT_TOKEN = process.env.BOT_TOKEN || '8689114890:AAFBFM0rNtZWpOtAovIPHPVQTJVp0odU1DQ';
+const BOT_TOKEN = process.env.BOT_TOKEN || '8574999116:AAF39jSNBiOx-RqIFF08oLxHXqyxsQ9mYqw';
 
 const app = express();
 const server = http.createServer(app);
