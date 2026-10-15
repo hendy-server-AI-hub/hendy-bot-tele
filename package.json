@@ -1,13 +1,23 @@
 {
-  "name": "hendy-hades-cloud",
+  "name": "hendy-bot-tele",
   "version": "6.1.0",
   "description": "Master Control Panel - Hendy & Hades V6100 System on Cloudflare",
-  "main": "src/worker.js",
+  "main": "worker.js",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "start": "node server.js"
   },
   "devDependencies": {
     "wrangler": "^3.114.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "fluent-ffmpeg": "^2.1.3",
+    "node-telegram-bot-api": "^0.66.0",
+    "openai": "^4.52.0",
+    "ws": "^8.18.0"
   }
 }
